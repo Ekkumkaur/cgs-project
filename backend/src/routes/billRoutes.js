@@ -1,6 +1,6 @@
 // routes/billRoutes.js
 import express from "express";
-import { addBill, deleteBill, getBillById, getBills, updateBill, updatePaymentStatus } from "../controllers/billcontroller.js";
+import { addBill, deleteBill, getBillById, getBills, updateBill, updatePaymentStatus } from "../controllers/billController.js";
 import protect from "../middleware/authMiddleware.js";
 
 const router = express.Router();
