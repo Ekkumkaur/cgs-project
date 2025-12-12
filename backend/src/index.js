@@ -69,6 +69,13 @@ app.use("/api/bills", billRoutes);
 app.use("/api/ledger", ledgerRoutes);
 
 app.get("/", (_, res) => res.send("E-commerce backend running ✅"));
+app.get("/api/health", (req, res) => {
+  res.status(200).json({
+    status: "ok",
+    message: "Backend is running",
+    timestamp: new Date().toISOString(),
+  });
+});
 
 const PORT = process.env.PORT || 3000;
 
