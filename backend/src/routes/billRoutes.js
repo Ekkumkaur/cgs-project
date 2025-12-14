@@ -1,15 +1,30 @@
-// routes/billRoutes.js
 import express from "express";
-import { addBill, deleteBill, getBillById, getBills, updateBill, updatePaymentStatus } from "../controllers/billController.js";
-import protect from "../middleware/authMiddleware.js";
+import {
+  addBill,
+  getAllBills,
+  getBillById,
+  updatePaymentStatus,
+  returnBill,
+  deleteBill,
+  getBillsByDateRange,
+} from "../controllers/billcontroller.js";
+import protect, { adminOnly } from "../middleware/authMiddleware.js";
 
 const router = express.Router();
 
-router.post("/add", protect, addBill);            // CREATE
-router.get("/all", protect, getBills);            // READ ALL
-router.get("/:id", protect, getBillById);         // READ ONE
-router.put("/update/:id", protect, updateBill);   // UPDATE
-router.delete("/delete/:id", protect, deleteBill);// DELETE
-router.put("/status/:id", protect, updatePaymentStatus); // PAYMENT STATUS UPDATE
+router.post("/add", protect, adminOnly, addBill);
+
+router.get("/all", protect, adminOnly, getAllBills);
+
+router.get("/filter-by-date", protect, adminOnly, getBillsByDateRange);
+
+router.get("/:id", protect, adminOnly, getBillById);
+
+router.put("/status/:id", protect, adminOnly, updatePaymentStatus);
+
+router.put("/return/:id", protect, adminOnly, returnBill);
+
+router.delete("/delete/:id", protect, adminOnly, deleteBill);
+
 
 export default router;

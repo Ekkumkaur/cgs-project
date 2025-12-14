@@ -28,6 +28,14 @@ import billRoutes from "./routes/billRoutes.js";
 
 import ledgerRoutes from "./routes/ledgerRoutes.js";
 
+import newBillRoutes from "./routes/newBillRoute.js";
+
+import supplierRoutes from "./routes/supplierRoutes.js";
+
+import adminRoutes from "./routes/adminRoutes.js";
+
+
+
 
 dotenv.config();
 connectDB();
@@ -67,15 +75,11 @@ app.use("/api/customers", customerRoutes);
 // app.use("/api/tickets", ticketRoutes);
 app.use("/api/bills", billRoutes);
 app.use("/api/ledger", ledgerRoutes);
+app.use("/api/newbill", newBillRoutes);
+app.use("/api/suppliers", supplierRoutes);
+app.use("/api/admin", adminRoutes);
 
 app.get("/", (_, res) => res.send("E-commerce backend running ✅"));
-app.get("/api/health", (req, res) => {
-  res.status(200).json({
-    status: "ok",
-    message: "Backend is running",
-    timestamp: new Date().toISOString(),
-  });
-});
 
 const PORT = process.env.PORT || 3000;
 
