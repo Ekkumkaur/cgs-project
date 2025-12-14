@@ -7,7 +7,7 @@ import {
   returnBill,
   deleteBill,
   getBillsByDateRange,
-} from "../controllers/billcontroller.js";
+} from "../controllers/billController.js";
 import protect, { adminOnly } from "../middleware/authMiddleware.js";
 
 const router = express.Router();
