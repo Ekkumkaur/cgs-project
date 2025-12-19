@@ -4,7 +4,7 @@ import {
   getAllReturns,
   updatePurchaseReturn,
   updateReturn
-} from "../controllers/returncontroller.js";
+} from "../controllers/returnController.js";
 import protect, { adminOnly } from "../middleware/authMiddleware.js";
 
 const router = express.Router();
