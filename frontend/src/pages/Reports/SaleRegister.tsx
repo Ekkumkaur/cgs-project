@@ -1,5 +1,6 @@
 "use client";
 import { AdminLayout } from "@/components/AdminLayout";
+import { getAllReports } from "@/adminApi/reportApi";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Calendar, Download } from "lucide-react";
@@ -16,22 +17,9 @@ import { CSS } from "@dnd-kit/utilities";
 export default function SaleRegister() {
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
-
-  const rows = Array.from({ length: 8 }, (_, i) => ({
-    id: i + 1,
-    sno: `${i + 1}`,
-    billNo: `GST-997${5 + i}`,
-    billDate: "01-Nov-25",
-    itemName: "Bra",
-    packSize: "SML",
-    companyName: "Lingere",
-    totalQty: "1",
-    itemCode: "0027",
-    rateUnit: "999",
-    cd: "",
-    netAmt: "₹ 399.00",
-    agentName: "Reena",
-  }));
+  const [rows, setRows] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const initialColumns = [
     { id: "sno", label: "SNO." },
@@ -52,6 +40,44 @@ export default function SaleRegister() {
     const savedOrder = localStorage.getItem("saleRegisterColumnOrder");
     return savedOrder ? JSON.parse(savedOrder) : initialColumns;
   });
+
+  useEffect(() => {
+    const fetchSaleRegister = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const response = await getAllReports();
+        if (response.success && Array.isArray(response.bills)) {
+          const flattenedData = response.bills.flatMap((bill: any) =>
+            (bill.items || []).map((item: any) => ({
+              id: item._id || `${bill._id}-${item.productId}`,
+              billNo: bill.billNo,
+              billDate: new Date(bill.billDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' }),
+              itemName: item.itemName,
+              packSize: item.packing || "N/A",
+              companyName: item.companyName || "N/A",
+              totalQty: item.qty,
+              itemCode: item.itemCode || "N/A",
+              rateUnit: item.rate,
+              cd: item.discountPercent || 0,
+              netAmt: item.total,
+              agentName: bill.agentName || "N/A", // agentName is not in the provided data
+            }))
+          );
+          setRows(flattenedData);
+        } else {
+          setError("Failed to fetch sale register data.");
+        }
+      } catch (err) {
+        setError("An error occurred while fetching the report.");
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchSaleRegister();
+  }, [fromDate, toDate]);
 
   useEffect(() => {
     localStorage.setItem("saleRegisterColumnOrder", JSON.stringify(columns));
@@ -99,6 +125,8 @@ export default function SaleRegister() {
                 type="text"
                 placeholder="DD-MM-YY"
                 className="pl-10 pr-4 w-[180px] h-[42px] rounded-lg bg-[#F5F5F5] border border-gray-300 text-gray-700 focus:ring-0 focus:outline-none"
+                value={fromDate}
+                onChange={(e) => setFromDate(e.target.value)}
               />
             </div>
           </div>
@@ -115,6 +143,8 @@ export default function SaleRegister() {
                 type="text"
                 placeholder="DD-MM-YY"
                 className="pl-10 pr-4 w-[180px] h-[42px] rounded-lg bg-[#F5F5F5] border border-gray-300 text-gray-700 focus:ring-0 focus:outline-none"
+                value={toDate}
+                onChange={(e) => setToDate(e.target.value)}
               />
             </div>
           </div>
@@ -152,8 +182,7 @@ export default function SaleRegister() {
 
             const renderCell = (row: any, columnId: string) => {
               switch (columnId) {
-                case "sno":
-                  return <td className="p-3 rounded-l-md">{row.sno}</td>;
+                case "sno": return <td className="p-3 rounded-l-md">{rows.indexOf(row) + 1}</td>;
                 case "billNo":
                   return <td className="p-3">{row.billNo}</td>;
                 case "billDate":
@@ -169,11 +198,11 @@ export default function SaleRegister() {
                 case "itemCode":
                   return <td className="p-3">{row.itemCode}</td>;
                 case "rateUnit":
-                  return <td className="p-3">{row.rateUnit}</td>;
+                  return <td className="p-3">₹{row.rateUnit?.toLocaleString('en-IN')}</td>;
                 case "cd":
-                  return <td className="p-3">{row.cd}</td>;
+                  return <td className="p-3">{row.cd}%</td>;
                 case "netAmt":
-                  return <td className="p-3">{row.netAmt}</td>;
+                  return <td className="p-3">₹{row.netAmt?.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>;
                 case "agentName":
                   return <td className="p-3 rounded-r-md">{row.agentName}</td>;
                 default:
@@ -200,16 +229,22 @@ export default function SaleRegister() {
                     </SortableContext>
                   </DndContext>
                 </thead>
-                <tbody>
-                  {rows.map((row) => (
-                    <tr
-                      key={row.id}
-                      className="bg-white shadow-sm hover:border hover:border-blue-400 transition-all"
-                    >
-                      {columns.map((col) => renderCell(row, col.id))}
-                    </tr>
-                  ))}
-                </tbody>
+                {loading ? (
+                  <tbody><tr><td colSpan={columns.length} className="text-center py-10">Loading...</td></tr></tbody>
+                ) : error ? (
+                  <tbody><tr><td colSpan={columns.length} className="text-center py-10 text-red-500">{error}</td></tr></tbody>
+                ) : (
+                  <tbody>
+                    {rows.map((row) => (
+                      <tr
+                        key={row.id}
+                        className="bg-white shadow-sm hover:border hover:border-blue-400 transition-all"
+                      >
+                        {columns.map((col) => renderCell(row, col.id))}
+                      </tr>
+                    ))}
+                  </tbody>
+                )}
               </table>
             );
           })()}

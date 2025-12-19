@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { AdminLayout } from "@/components/AdminLayout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -16,100 +16,245 @@ import {
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import { Check, ChevronsUpDown, Trash2 } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { toast } from "sonner";
+
+const mockProducts = [
+  { itemCode: "0026", itemName: "Colorbar Nail paint", companyName: "Colorbar", hsnCode: "3304", mrp: "250" },
+  { itemCode: "0027", itemName: "Lakme Lipstick", companyName: "Lakme", hsnCode: "3305", mrp: "450" },
+  { itemCode: "0028", itemName: "Maybelline Foundation", companyName: "Maybelline", hsnCode: "3306", mrp: "750" },
+  { itemCode: "PROD101", itemName: "Nivea Body Lotion", companyName: "Nivea", hsnCode: "3307", mrp: "350" },
+  { itemCode: "PROD102", itemName: "Himalaya Face Wash", companyName: "Himalaya", hsnCode: "3308", mrp: "150" },
+];
+
+const getProducts = async () => ({ success: true, data: mockProducts });
+
+// Mock API to add a bill. Replace with your actual API call.
+const addBill = async (billData: any) => {
+  console.log("Saving bill to database:", billData);
+  // Simulate network delay
+  return new Promise((resolve) => {
+    setTimeout(() => {
+      // Simulate a successful response
+      resolve({ success: true, message: "Bill created successfully!", data: { billId: `B-${Date.now()}`, ...billData } });
+    }, 1500);
+  });
+};
 
 export default function BillGeneration() {
   const navigate = useNavigate();
-  const [showModal, setShowModal] = useState(false);
+  const location = useLocation();
 
   const cards = [
-    {
-      title: "New Bill",
-      img: "src/images/new-bill.png",
-      path: "/bills/new",
-    },
-    {
-      title: "Sale",
-      img: "src/images/sale.png",
-      path: "/bills/sale",
-    },
-    {
-      title: "Sale Return",
-      img: "src/images/sale-return.png",
-      path: "/bills/sale-return",
-    },
+    { title: "New Bill", img: "src/images/new-bill.png", path: "/bills/customers" },
+    { title: "Sale", img: "src/images/sale.png", path: "/bills/sale" },
+    { title: "Sale Return", img: "src/images/sale-return.png", path: "/bills/sale-return" },
   ];
 
-  const billItems = [
-    {
-      id: 1,
-      sno: "01.",
-      adItemCode: "23245",
-      itemCode: "0026",
-      itemName: "Colorbar Nail paint",
-      companyName: "Colorbar",
-      hsnCode: "3304",
-      packing: "DD",
-      lot: "02",
-      mrp: "02",
-      qty: "10",
-      cd: "210",
-      netAmount: "404.99",
-      tax: "9.1",
-    },
-  ];
+  const [showModal, setShowModal] = useState(false);
+  const [selectedCustomer, setSelectedCustomer] = useState<any>(null);
+  const [allProducts, setAllProducts] = useState<any[]>([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const initialColumns = [
-    { id: "sno", label: "SNO." },
-    { id: "adItemCode", label: "Ad. item code" },
+  useEffect(() => {
+    if (location.state?.customer) {
+      setSelectedCustomer(location.state.customer);
+      setShowModal(true);
+      navigate(location.pathname, { replace: true });
+    }
+  }, [location, navigate]);
+
+  useEffect(() => {
+    getProducts().then((res: any) => setAllProducts(res.data));
+  }, []);
+
+  const initialBillItem = {
+    id: Date.now(),
+    sno: "01.",
+    itemCode: "",
+    itemName: "",
+    companyName: "",
+    hsnCode: "",
+    packing: "",
+    lot: "",
+    mrp: "",
+    qty: "1",
+    cd: "",
+    netAmount: "",
+    tax: "",
+  };
+
+  const [billItems, setBillItems] = useState<any[]>([initialBillItem]);
+
+  const columns = [
+    { id: "actions", label: "" },
+    { id: "sno", label: "SNO" },
     { id: "itemCode", label: "ITEM CODE" },
     { id: "itemName", label: "ITEM NAME" },
-    { id: "companyName", label: "COMPANY NAME" },
-    { id: "hsnCode", label: "HSN CODE" },
-    { id: "packing", label: "PACKING" },
-    { id: "lot", label: "LOT" },
+    { id: "companyName", label: "COMPANY" },
+    { id: "hsnCode", label: "HSN" },
+    { id: "packing", label: "Packing" },
+    { id: "lot", label: "Lot" },
     { id: "mrp", label: "MRP" },
     { id: "qty", label: "QTY" },
-    { id: "cd", label: "C.D" },
-    { id: "netAmount", label: "NET AMOUNT" },
+    { id: "cd", label: "CD" },
+    { id: "netAmount", label: "NET" },
     { id: "tax", label: "TAX" },
   ];
 
-  const [columns, setColumns] = useState(() => {
-    const savedOrder = localStorage.getItem("billGenerationColumnOrder");
-    if (savedOrder) {
-      try {
-        return JSON.parse(savedOrder);
-      } catch (e) {
-        return initialColumns;
-      }
-    }
-    return initialColumns;
-  });
-
-  const SortableHeader = ({ column }: { column: { id: string; label: string } }) => {
-    const { attributes, listeners, setNodeRef, transform, transition } =
-      useSortable({ id: column.id });
-    const style = {
-      transform: CSS.Transform.toString(transform),
-      transition,
-    };
-
+  const SortableHeader = ({ column }: any) => {
+    const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: column.id });
     return (
       <th
         ref={setNodeRef}
-        style={style}
         {...attributes}
         {...listeners}
-        className="px-5 py-3 cursor-grab"
+        style={{ transform: CSS.Transform.toString(transform), transition }}
+        className="px-3 py-2 cursor-grab"
       >
         {column.label}
       </th>
     );
   };
 
-  useEffect(() => {
-    localStorage.setItem("billGenerationColumnOrder", JSON.stringify(columns));
-  }, [columns]);
+  const handleItemChange = (id: number, field: string, value: string) => {
+    setBillItems(items => items.map(i => (i.id === id ? { ...i, [field]: value } : i)));
+  };
+
+  const handleItemDelete = (id: number) => {
+    setBillItems(items => items.filter(i => i.id !== id));
+  };
+
+  const handleProductSelect = (id: number, code: string) => {
+    const p = allProducts.find(x => x.itemCode === code);
+    if (!p) return;
+    setBillItems(items => items.map(i => (i.id === id ? { ...i, ...p } : i)));
+  };
+
+  const handleContinue = async () => {
+    // Basic validation
+    if (billItems.length === 0 || billItems.some(item => !item.itemCode || !item.qty || Number(item.qty) === 0)) {
+      toast.warning("Please add at least one item with a valid product and quantity.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const billPayload = {
+        customer: selectedCustomer,
+        items: billItems,
+        // You can add other bill details here, like total amount, tax, etc.
+      };
+
+      const response: any = await addBill(billPayload);
+
+      if (response.success) {
+        toast.success(response.message);
+        // Navigate to the new bill page with the saved bill details
+        navigate("/bills/new-bill", { state: { billDetails: response.data } });
+      } else {
+        toast.error(response.message || "Failed to create bill.");
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const renderCell = (item: any, col: string, index: number) => {
+    if (col === "actions")
+      return (
+        <td className="px-2">
+          <button onClick={() => handleItemDelete(item.id)}>
+            <Trash2 className="w-4 h-4 text-red-500" />
+          </button>
+        </td>
+      );
+
+    if (col === "sno") return <td className="px-2 text-center">{`0${index + 1}.`}</td>;
+
+    if (col === "itemCode")
+      return (
+        <td className="px-2">
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" className="w-[150px] justify-between font-normal">
+                {item.itemCode || "Select"}
+                <ChevronsUpDown className="h-4 w-4 opacity-50" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-[250px] p-0">
+              <Command>
+                <CommandInput placeholder="Search product" />
+                <CommandList>
+                  <CommandEmpty>No product</CommandEmpty>
+                  <CommandGroup>
+                    {allProducts.map((p) => (
+                      <CommandItem key={p.itemCode} onSelect={() => handleProductSelect(item.id, p.itemCode)}>
+                        <Check className={cn("mr-2 h-4 w-4", item.itemCode === p.itemCode ? "opacity-100" : "opacity-0")} />
+                        {p.itemCode}
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                </CommandList>
+              </Command>
+            </PopoverContent>
+          </Popover>
+        </td>
+      );
+
+    if (col === "itemName")
+      return (
+        <td className="px-2">
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" className="w-[200px] justify-between font-normal">
+                {item.itemName || "Select Product"}
+                <ChevronsUpDown className="h-4 w-4 opacity-50" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-[300px] p-0">
+              <Command>
+                <CommandInput placeholder="Search product by name..." />
+                <CommandList>
+                  <CommandEmpty>No product found.</CommandEmpty>
+                  <CommandGroup>
+                    {allProducts.map((p) => (
+                      <CommandItem key={p.itemCode} value={p.itemName} onSelect={() => handleProductSelect(item.id, p.itemCode)}>
+                        <Check className={cn("mr-2 h-4 w-4", item.itemCode === p.itemCode ? "opacity-100" : "opacity-0")} />
+                        {p.itemName}
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                </CommandList>
+              </Command>
+            </PopoverContent>
+          </Popover>
+        </td>
+      );
+
+    // All other fields are editable inputs
+    return (
+      <td className="px-2">
+        <input
+          value={item[col] || ""}
+          onChange={e => handleItemChange(item.id, col, e.target.value)}
+          className="border rounded px-2 py-1 w-full text-sm bg-white focus:ring-1 focus:ring-blue-500 focus:outline-none"
+          // Make MRP and QTY number inputs for better UX
+          type={(col === 'mrp' || col === 'qty' || col === 'cd' || col === 'netAmount' || col === 'tax') ? 'number' : 'text'}
+        />
+      </td>
+    );
+  };
 
   return (
     <AdminLayout title="Bill Generation">
@@ -118,120 +263,50 @@ export default function BillGeneration() {
           <Card
             key={index}
             className="w-[180px] h-[140px] flex flex-col items-center justify-center shadow-md rounded-2xl cursor-pointer transition-transform hover:scale-105 bg-[#e48a7c]"
-            onClick={() => {
-              if (card.title === "New Bill") setShowModal(true);
-              else navigate(card.path);
-            }}
+            onClick={() => navigate(card.path)}
           >
             <CardContent className="flex flex-col items-center justify-center text-white p-4">
-              <img
-                src={card.img}
-                alt={card.title}
-                className="w-12 h-12 mb-3 object-contain"
-              />
+              <img src={card.img} alt={card.title} className="w-12 h-12 mb-3" />
               <p className="mt-1 font-medium">{card.title}</p>
             </CardContent>
           </Card>
         ))}
       </div>
 
-      {/* Modal */}
       {showModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-[20px] shadow-2xl p-10 relative flex flex-col items-center justify-center gap-6">
-            {/* Header */}
-            <div className="flex justify-between w-full px-2 items-center">
-              <p className="text-[20px] font-medium text-[#0a3441]">
-                Customer Name:{" "}
-                <span className="font-semibold">Rahul Sharma</span>
-              </p>
-              <p className="text-[20px] font-medium text-[#0a3441]">
-                Customer Code:{" "}
-                <span className="font-semibold">CGS0021</span>
-              </p>
+          <div className="bg-white p-6 rounded-2xl w-[95%] max-w-7xl relative shadow-2xl">
+            <h2 className="text-lg font-semibold mb-4">Customer: {selectedCustomer?.name}</h2>
+
+            <Button
+              className="mb-4"
+              onClick={() => setBillItems(p => [...p, { ...initialBillItem, id: Date.now(), sno: `0${p.length + 1}.` }])}
+            >
+              Add Item
+            </Button>
+
+            <div className="overflow-x-auto">
+              <table className="w-full border">
+                <thead className="bg-gray-50 text-xs uppercase text-gray-700">
+                  <tr>{columns.map(c => <th key={c.id} className="px-3 py-2">{c.label}</th>)}</tr>
+                </thead>
+                <tbody>
+                  {billItems.map((item, index) => (
+                    <tr key={item.id} className="border-t">
+                      {columns.map(c => renderCell(item, c.id, index))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
 
-            {/* Title */}
-            <h2 className="text-center text-[18px] font-semibold text-[#0a3441]">
-              Enter your Product details
-            </h2>
-
-            {(() => {
-              const handleDragEnd = (event: DragEndEvent) => {
-                const { active, over } = event;
-                if (over && active.id !== over.id) {
-                  setColumns((items) => {
-                    const oldIndex = items.findIndex((item) => item.id === active.id);
-                    const newIndex = items.findIndex((item) => item.id === over.id);
-                    return arrayMove(items, oldIndex, newIndex);
-                  });
-                }
-              };
-
-              const columnIds = columns.map((c) => c.id);
-
-              const renderCell = (item: any, columnId: string) => {
-                switch (columnId) {
-                  case "sno": return <td className="px-5 py-3">{item.sno}</td>;
-                  case "adItemCode": return <td className="px-5 py-3">{item.adItemCode}</td>;
-                  case "itemCode": return <td className="px-5 py-3">{item.itemCode}</td>;
-                  case "itemName": return <td className="px-5 py-3">{item.itemName}</td>;
-                  case "companyName": return <td className="px-5 py-3">{item.companyName}</td>;
-                  case "hsnCode": return <td className="px-5 py-3">{item.hsnCode}</td>;
-                  case "packing": return <td className="px-5 py-3">{item.packing}</td>;
-                  case "lot": return <td className="px-5 py-3">{item.lot}</td>;
-                  case "mrp": return <td className="px-5 py-3">{item.mrp}</td>;
-                  case "qty": return <td className="px-5 py-3">{item.qty}</td>;
-                  case "cd": return <td className="px-5 py-3">{item.cd}</td>;
-                  case "netAmount": return <td className="px-5 py-3">{item.netAmount}</td>;
-                  case "tax": return <td className="px-5 py-3">{item.tax}</td>;
-                  default: return null;
-                }
-              };
-
-              return (
-                <div className="w-full overflow-x-auto rounded-lg shadow-md">
-                  <table className="w-full text-left text-[15px]">
-                    <thead className="font-medium text-[#0a3441] bg-gray-100">
-                      <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-                        <SortableContext items={columnIds} strategy={horizontalListSortingStrategy}>
-                          <tr>
-                            {columns.map((column) => (
-                              <SortableHeader key={column.id} column={column} />
-                            ))}
-                          </tr>
-                        </SortableContext>
-                      </DndContext>
-                    </thead>
-                    <tbody className="text-gray-600 bg-white">
-                      {billItems.map((item) => (
-                        <tr key={item.id}>
-                          {columns.map((col) => renderCell(item, col.id))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              );
-            })()}
-
-            {/* Continue Button */}
-            <div className="flex justify-center w-full pt-2">
-              <Button
-                onClick={() => setShowModal(false)}
-                className="bg-[#e98c81] hover:bg-[#e98c81]/90 text-white text-[16px] font-semibold px-10 py-2.5 rounded-full shadow-lg"
-              >
-                Continue
+            <div className="flex justify-center mt-6">
+              <Button onClick={handleContinue} disabled={isSubmitting}>
+                {isSubmitting ? "Saving Bill..." : "Continue"}
               </Button>
             </div>
 
-            {/* Close (X) */}
-            <button
-              onClick={() => setShowModal(false)}
-              className="absolute top-4 right-6 text-gray-400 hover:text-gray-600 text-3xl font-light"
-            >
-              &times;
-            </button>
+            <button onClick={() => setShowModal(false)} className="absolute top-4 right-6 text-2xl">×</button>
           </div>
         </div>
       )}

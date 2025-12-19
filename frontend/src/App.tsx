@@ -20,7 +20,6 @@ import ReturnPurchase from "./pages/ReturnPurchase";
 import PurchaseVoucher from "./pages/PurchaseVoucher";
 import Ledger from "./pages/Ledger";
 import Sale from "./pages/Sale";
-import SaleReturn from "./pages/SaleReturn";
 import Reports from "./pages/Reports";
 import HSN from "./pages/Reports/HSN";
 import GSTReturn from "./pages/Reports/GSTReturn";
@@ -33,6 +32,8 @@ import SaleRegister from "./pages/Reports/SaleRegister";
 import Profile from "./pages/Profile";
 import Settings from "./pages/Settings";
 import GeneralSettings from "./pages/GeneralSettings";
+import Customers from "./pages/Customers";
+import NewBill from "./pages/NewBill";
 
 const queryClient = new QueryClient();
 
@@ -55,7 +56,8 @@ const App = () => (
           <Route path="/customers" element={<CustomerRelationship />} />
           <Route path="/bills" element={<BillGeneration />} />
           <Route path="/bills/sale" element={<Sale />} />
-          <Route path="/bills/sale-return" element={<SaleReturn />} />
+          <Route path="/bills/new-bill" element={<NewBill />} />
+          <Route path="/bills/customers" element={<Customers />} />
           <Route path="/purchases" element={<Purchases />} />
           <Route path="/purchases/purchasers-detail" element={<PurchasersDetail />} />
           <Route path="/purchases/purchase-detail" element={<PurchaseDetail/>} />

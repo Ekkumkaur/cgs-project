@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "@/components/ui/use-toast"; // Using the existing toast system for consistency
 import { Eye, EyeOff } from "lucide-react";
+import loginImage from "@/images/login-bg.png";
 
 export default function Login() {
   const navigate = useNavigate();
@@ -66,7 +67,7 @@ export default function Login() {
         {/* Illustration Side */}
         <div className="flex items-center justify-center bg-white p-10 rounded-3xl">
           <img
-            src="src\images\login-bg.png" 
+            src={loginImage}
             alt="illustration"
             className="w-full h-auto"
           />

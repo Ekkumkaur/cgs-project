@@ -6,3 +6,4 @@ export const updateProduct = ({id, data}: {id: string, data: any}) => adminInsta
 export const getProductById = ({id}) => adminInstance.get(`/products/${id}`);
 export const addProduct = ({data}) => adminInstance.post('/products', data);
 export const deleteProduct = ({id}) => adminInstance.delete(`/products/${id}`);
+export const searchProductByCode = ({ term }: { term: string }) => adminInstance.get(`/products/search?term=${term}`);

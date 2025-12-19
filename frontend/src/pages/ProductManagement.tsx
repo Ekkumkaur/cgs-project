@@ -257,7 +257,7 @@ export default function ProductManagement() {
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     if (over && active.id !== over.id) {
-      setColumns((items) => {
+      setColumns((items: any[]) => {
         const oldIndex = items.findIndex((item) => (item.id || item._id) === active.id);
         const newIndex = items.findIndex((item) => (item.id || item._id) === over.id);
         return arrayMove(items, oldIndex, newIndex);
@@ -646,7 +646,7 @@ export default function ProductManagement() {
   const renderCell = (product: any, columnId: string) => {
     switch (columnId) {
       case "code":
-        return <td className="px-6 py-4">{product.itemCode || "N/A"}</td>;
+        return <td className="px-6 py-4">{product.itemCode || "N/A"}</td>
       case "brand":
         return <td className="px-6 py-4">{product.brandName || "N/A"}</td>;
       case "category":
@@ -654,8 +654,7 @@ export default function ProductManagement() {
         let categoryDisplay = "N/A";
         if (category) {
           if (category.parent) {
-            const parentName =
-              typeof category.parent === "object" ? category.parent.name : "";
+            const parentName = typeof category.parent === 'object' ? category.parent.name : '';
             categoryDisplay = `${parentName} / ${category.name}`;
           } else {
             categoryDisplay = category.name;
@@ -1046,33 +1045,18 @@ export default function ProductManagement() {
                     <SelectValue placeholder="Select a category" />
                   </SelectTrigger>
                   <SelectContent>
-                    {categories
-                      .filter((c) => !c.parent)
-                      .map((cat) => (
-                        <SelectItem key={cat._id} value={cat._id}>
-                          {cat.name}
+                    {categories.filter(c => !c.parent).map(category => (
+                      <React.Fragment key={category._id}>
+                        <SelectItem value={category._id}>
+                          {category.name}
                         </SelectItem>
-                      ))}
-                    {categories.map((category) => {
-                      if (!category.parent) {
-                        const subCategories = categories.filter(
-                          (sub) => sub.parent?._id === category._id
-                        );
-                        return (
-                          <React.Fragment key={category._id}>
-                            <SelectItem value={category._id}>
-                              {category.name}
-                            </SelectItem>
-                            {subCategories.map((sub) => (
-                              <SelectItem key={sub._id} value={sub._id}>
-                                <span className="ml-4">{sub.name}</span>
-                              </SelectItem>
-                            ))}
-                          </React.Fragment>
-                        );
-                      }
-                      return null;
-                    })}
+                        {categories.filter(sub => sub.parent?._id === category._id).map(sub => (
+                          <SelectItem key={sub._id} value={sub._id}>
+                            <span className="ml-4">{sub.name}</span>
+                          </SelectItem>
+                        ))}
+                      </React.Fragment>
+                    ))}
                   </SelectContent>
                 </Select>
                 {errors.category && (
@@ -1420,6 +1404,7 @@ export default function ProductManagement() {
       </div> */}
 
       {/* Upload Area */}
+    
       <div
         className="py-12 border-2 border-dashed border-[#E98C81] bg-[#fdebe3] rounded-lg flex flex-col items-center justify-center text-center hover:bg-[#f9e5dc] transition-colors cursor-pointer relative"
         onDragOver={(e) => {

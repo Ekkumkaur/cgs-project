@@ -1,6 +1,6 @@
 // Ledger.jsx
 import { AdminLayout } from "@/components/AdminLayout";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { Search, Download, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,18 +12,14 @@ import {
   SelectItem,
 } from "@/components/ui/select";
 import {
-  DndContext,
-  closestCenter,
-  type DragEndEvent,
-} from "@dnd-kit/core";
-import {
-  arrayMove,
-  SortableContext,
-  horizontalListSortingStrategy,
-  useSortable,
-} from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
-import { getCustomerLedger, getSupplierLedger } from "@/adminApi/ledgerApi";
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { getCustomerLedger, getSupplierLedger, addLedgerEntry } from "@/adminApi/ledgerApi";
+import { Label } from "@/components/ui/label";
 
 function Ledger() {
   const [activeTab, setActiveTab] = useState("customer");
@@ -44,6 +40,30 @@ function Ledger() {
       netBalance: 0,
     },
   });
+  const [addLedgerDialogOpen, setAddLedgerDialogOpen] = useState(false);
+  const [newLedgerEntry, setNewLedgerEntry] = useState({
+    partyId: "",
+    date: new Date().toISOString().split("T")[0],
+    type: "",
+    referenceNo: "",
+    paymentMethod: "",
+    amount: "",
+    transactionType: "debit", // 'debit' or 'credit'
+    dueDate: "",
+  });
+
+  const summaryDataInit = {
+    customer: {
+      totalDebit: 0,
+      totalCredit: 0,
+      customersWithBalance: 0,
+    },
+    supplier: {
+      totalDebit: 0,
+      totalCredit: 0,
+      netBalance: 0,
+    },
+  };
 
   const initialCustomerColumns = [
     { id: "date", label: "DATE" },
@@ -61,10 +81,9 @@ function Ledger() {
 
   const initialSupplierColumns = [
     { id: "date", label: "DATE" },
-    { id: "party", label: "SUPPLIER NAME" },
-    { id: "type", label: "TYPE" },
-    { id: "referenceNo", label: "REFERENCE NO." },
-    { id: "paymentMethod", label: "PAYMENT METHOD" },
+    { id: "party", label: "PARTY NAME" },
+    { id: "type", label: "VOUCHER TYPE" },
+    { id: "referenceNo", label: "VOUCHER NO." },
     { id: "debit", label: "DEBIT(₹)" },
     { id: "credit", label: "CREDIT(₹)" },
     { id: "balance", label: "BALANCE" },
@@ -80,16 +99,6 @@ function Ledger() {
     return savedOrder ? JSON.parse(savedOrder) : initialSupplierColumns;
   });
 
-  // Fetch data when tab changes
-  useEffect(() => {
-    fetchLedgerData();
-  }, [activeTab]);
-
-  useEffect(() => {
-    // Don't fetch on initial render if data is already being fetched by the activeTab effect
-    fetchLedgerData();
-  }, [typeFilter]);
-
   useEffect(() => {
     localStorage.setItem("customerLedgerColumnOrder", JSON.stringify(customerColumns));
   }, [customerColumns]);
@@ -98,23 +107,21 @@ function Ledger() {
     localStorage.setItem("supplierLedgerColumnOrder", JSON.stringify(supplierColumns));
   }, [supplierColumns]);
 
-  const fetchLedgerData = async () => {
+  const fetchLedgerData = useCallback(async () => {
     setLoading(true);
     try {
-      const params = {
+      const params: any = {
         page: 1,
         limit: 1000,
       };
 
       // Add search query if exists
       if (searchQuery.trim()) {
-        // @ts-ignore
         params.search = searchQuery.trim();
       }
 
       // Add type filter if not "all"
       if (typeFilter !== "all") {
-        // @ts-ignore
         params.type = typeFilter;
       }
 
@@ -152,10 +159,51 @@ function Ledger() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [activeTab, searchQuery, typeFilter]);
+
+  useEffect(() => {
+    fetchLedgerData();
+  }, [fetchLedgerData]);
 
   const handleSearch = () => {
     fetchLedgerData();
+  };
+
+  const handleAddLedgerSubmit = async () => {
+    if (!newLedgerEntry.partyId || !newLedgerEntry.date || !newLedgerEntry.type || !newLedgerEntry.amount) {
+      alert("Please fill all required fields: Party, Date, Type, and Amount.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const { amount, transactionType, ...restOfEntry } = newLedgerEntry;
+      const payload: any = {
+        ...restOfEntry,
+        ledgerType: activeTab, // 'customer' or 'supplier'
+      };
+
+      // Conditionally add debit or credit based on transactionType
+      if (transactionType === 'debit') {
+        payload.debit = Number(amount);
+      } else {
+        payload.credit = Number(amount);
+      }
+      const response = await addLedgerEntry(payload);
+
+      if (response.data.success) {
+        alert("Ledger entry added successfully!");
+        setAddLedgerDialogOpen(false);
+        fetchLedgerData(); // Refresh data
+      } else {
+        alert(response.data.message || "Failed to add ledger entry.");
+      }
+    } catch (error) {
+      console.error("Error adding ledger entry:", error);
+      alert("An error occurred while adding the ledger entry.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleExport = () => {
@@ -227,21 +275,6 @@ function Ledger() {
     return amount < 0 ? `-₹${formatted}` : `₹${formatted}`;
   };
 
-  const SortableHeader = ({ column }: { column: { id: string; label: string } }) => {
-    const { attributes, listeners, setNodeRef, transform, transition } =
-      useSortable({ id: column.id });
-    const style = {
-      transform: CSS.Transform.toString(transform),
-      transition,
-    };
-
-    return (
-      <th ref={setNodeRef} style={style} {...attributes} {...listeners} className="px-3 py-3 cursor-grab">
-        {column.label}
-      </th>
-    );
-  };
-
   const summary =
     activeTab === "customer"
       ? [
@@ -310,21 +343,6 @@ function Ledger() {
             >
               {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
             </Button>
-          </div>
-
-          <div className="flex flex-wrap items-center justify-between gap-3 pr-40">
-            <Select value={typeFilter} onValueChange={setTypeFilter}>
-              <SelectTrigger className="w-[130px] rounded-full bg-[#FEEEE5] border border-gray-300">
-                <SelectValue placeholder="All Type" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Type</SelectItem>
-                <SelectItem value="Sale">Sale</SelectItem>
-                <SelectItem value="Purchase">Purchase</SelectItem>
-                <SelectItem value="Payment">Payment</SelectItem>
-                <SelectItem value="Receipt">Receipt</SelectItem>
-              </SelectContent>
-            </Select>
             <Button
               onClick={handleExport}
               disabled={loading || tableData.length === 0}
@@ -334,6 +352,27 @@ function Ledger() {
               <Download className="w-4 h-4" />
               Export
             </Button>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-3 pr-40">
+            <Select value={typeFilter} onValueChange={setTypeFilter}>
+              <SelectTrigger className="w-[130px] rounded-full bg-[#FEEEE5] border border-gray-300">
+                <SelectValue placeholder="All Types" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Types</SelectItem>
+                <SelectItem value="Sale">Sale</SelectItem>
+                <SelectItem value="Purchase">Purchase</SelectItem>
+                <SelectItem value="Payment">Payment</SelectItem>
+                <SelectItem value="Receipt">Receipt</SelectItem>
+              </SelectContent>
+            </Select>
+            {/* <Button
+              onClick={() => setAddLedgerDialogOpen(true)}
+              className="rounded-full bg-[#E98C81] hover:bg-[#e67a6d] text-white"
+            >
+              Add Ledger
+            </Button> */}
           </div>
         </div>
 
@@ -370,20 +409,7 @@ function Ledger() {
           ) : (
             <table className="min-w-full border-collapse text-sm text-gray-700 text-center whitespace-nowrap">
               {(() => {
-                const handleDragEnd = (event: DragEndEvent) => {
-                  const { active, over } = event;
-                  if (!over || active.id === over.id) return;
-
-                  const moveColumns = activeTab === 'customer' ? setCustomerColumns : setSupplierColumns;
-                  moveColumns((columns) => {
-                    const oldIndex = columns.findIndex((col) => col.id === active.id);
-                    const newIndex = columns.findIndex((col) => col.id === over.id);
-                    return arrayMove(columns, oldIndex, newIndex);
-                  });
-                };
-
                 const columns = activeTab === 'customer' ? customerColumns : supplierColumns;
-                const columnIds = columns.map((c) => c.id);
 
                 const renderCell = (item: any, columnId: string) => {
                   switch (columnId) {
@@ -435,15 +461,11 @@ function Ledger() {
                 return (
                   <>
                     <thead className="bg-[#F6F6F6] text-gray-600">
-                      <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-                        <SortableContext items={columnIds} strategy={horizontalListSortingStrategy}>
-                          <tr>
-                            {columns.map((column) => (
-                              <SortableHeader key={column.id} column={column} />
-                            ))}
-                          </tr>
-                        </SortableContext>
-                      </DndContext>
+                      <tr>
+                        {columns.map((column) => (
+                          <th key={column.id} className="px-3 py-3">{column.label}</th>
+                        ))}
+                      </tr>
                     </thead>
                     <tbody>
                       {tableData.map((item) => (
@@ -463,6 +485,95 @@ function Ledger() {
           )}
         </div>
       </div>
+
+      {/* Add Ledger Dialog */}
+      <Dialog open={addLedgerDialogOpen} onOpenChange={setAddLedgerDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Add {activeTab === 'customer' ? 'Customer' : 'Supplier'} Ledger Entry</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="partyId" className="text-right">
+                {activeTab === 'customer' ? 'Customer' : 'Supplier'}
+              </Label>
+              <Input id="partyId" value={newLedgerEntry.partyId} onChange={(e) => setNewLedgerEntry({...newLedgerEntry, partyId: e.target.value})} className="col-span-3" placeholder="Enter ID"/>
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="date" className="text-right">
+                Date
+              </Label>
+              <Input id="date" type="date" value={newLedgerEntry.date} onChange={(e) => setNewLedgerEntry({...newLedgerEntry, date: e.target.value})} className="col-span-3" />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="type" className="text-right">
+                Type
+              </Label>
+              <Select value={newLedgerEntry.type} onValueChange={(value) => setNewLedgerEntry({...newLedgerEntry, type: value})}>
+                <SelectTrigger className="col-span-3">
+                  <SelectValue placeholder="Select Type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Sale">Sale</SelectItem>
+                  <SelectItem value="Purchase">Purchase</SelectItem>
+                  <SelectItem value="Payment">Payment</SelectItem>
+                  <SelectItem value="Receipt">Receipt</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="referenceNo" className="text-right">
+                Reference No.
+              </Label>
+              <Input id="referenceNo" value={newLedgerEntry.referenceNo} onChange={(e) => setNewLedgerEntry({...newLedgerEntry, referenceNo: e.target.value})} className="col-span-3" />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="paymentMethod" className="text-right">
+                Payment Method
+              </Label>
+              <Input id="paymentMethod" value={newLedgerEntry.paymentMethod} onChange={(e) => setNewLedgerEntry({...newLedgerEntry, paymentMethod: e.target.value})} className="col-span-3" />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="amount" className="text-right">
+                Amount
+              </Label>
+              <Input id="amount" type="number" value={newLedgerEntry.amount} onChange={(e) => setNewLedgerEntry({...newLedgerEntry, amount: e.target.value})} className="col-span-3" />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label className="text-right">
+                Transaction
+              </Label>
+              <div className="col-span-3">
+                <Select value={newLedgerEntry.transactionType} onValueChange={(value) => setNewLedgerEntry({...newLedgerEntry, transactionType: value})}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select Transaction Type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="debit">Debit</SelectItem>
+                    <SelectItem value="credit">Credit</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            {activeTab === 'customer' && (
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="dueDate" className="text-right">
+                  Due Date
+                </Label>
+                <Input id="dueDate" type="date" value={newLedgerEntry.dueDate} onChange={(e) => setNewLedgerEntry({...newLedgerEntry, dueDate: e.target.value})} className="col-span-3" />
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAddLedgerDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleAddLedgerSubmit} className="bg-[#E98C81] hover:bg-[#e67a6d] text-white">
+              Add Entry
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AdminLayout>
   );
 }

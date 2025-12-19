@@ -1,5 +1,6 @@
 "use client";
 import { AdminLayout } from "@/components/AdminLayout";
+import { getAllReports } from "@/adminApi/reportApi";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Calendar, Download } from "lucide-react";
@@ -18,16 +19,11 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 
 export default function ItemWiseSaleRegister() {
-  const rows = Array.from({ length: 10 }, (_, i) => ({
-    id: i + 1,
-    sno: `${i + 1}`,
-    companyName: "Lakme",
-    itemName: "Lakme 9to5 CC Cream",
-    packSize: "50ml",
-    itemCode: "01232876",
-    totalQty: "1",
-    grossAmt: "₹ 399.00",
-  }));
+  const [rows, setRows] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
 
   const initialColumns = [
     { id: "sno", label: "SNO." },
@@ -43,6 +39,50 @@ export default function ItemWiseSaleRegister() {
     const savedOrder = localStorage.getItem("itemWiseSaleReportColumnOrder");
     return savedOrder ? JSON.parse(savedOrder) : initialColumns;
   });
+
+  useEffect(() => {
+    const fetchReport = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const response = await getAllReports();
+        if (response.success && Array.isArray(response.bills)) {
+          const allItems = response.bills.flatMap((bill: any) => bill.items || []);
+
+          const itemSummary: { [key: string]: any } = {};
+
+          for (const item of allItems) {
+            const itemIdentifier = item.itemCode || item.itemName;
+            if (!itemIdentifier) continue;
+
+            if (!itemSummary[itemIdentifier]) {
+              itemSummary[itemIdentifier] = {
+                id: itemIdentifier,
+                companyName: item.companyName || "N/A",
+                itemName: item.itemName || "N/A",
+                packSize: item.packing || "N/A",
+                itemCode: item.itemCode || "N/A",
+                totalQty: 0,
+                grossAmt: 0,
+              };
+            }
+            itemSummary[itemIdentifier].totalQty += item.qty || 0;
+            itemSummary[itemIdentifier].grossAmt += item.total || 0;
+          }
+
+          setRows(Object.values(itemSummary));
+        } else {
+          setError("Failed to fetch item wise sale report.");
+        }
+      } catch (err) {
+        setError("An error occurred while fetching the report.");
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchReport();
+  }, [fromDate, toDate]);
 
   useEffect(() => {
     localStorage.setItem("itemWiseSaleReportColumnOrder", JSON.stringify(columns));
@@ -83,6 +123,8 @@ export default function ItemWiseSaleRegister() {
                 type="text"
                 placeholder="DD-MM-YY"
                 className="pl-10 pr-4 w-[180px] h-[42px] rounded-lg bg-[#F5F5F5] border border-gray-300 text-gray-700 focus:ring-0 focus:outline-none"
+                value={fromDate}
+                onChange={(e) => setFromDate(e.target.value)}
               />
             </div>
           </div>
@@ -96,6 +138,8 @@ export default function ItemWiseSaleRegister() {
                 type="text"
                 placeholder="DD-MM-YY"
                 className="pl-10 pr-4 w-[180px] h-[42px] rounded-lg bg-[#F5F5F5] border border-gray-300 text-gray-700 focus:ring-0 focus:outline-none"
+                value={toDate}
+                onChange={(e) => setToDate(e.target.value)}
               />
             </div>
           </div>
@@ -132,13 +176,13 @@ export default function ItemWiseSaleRegister() {
 
         const renderCell = (row: any, columnId: string) => {
           switch (columnId) {
-            case "sno": return <td className="py-3 px-4">{row.sno}</td>;
+            case "sno": return <td className="py-3 px-4">{rows.indexOf(row) + 1}</td>;
             case "companyName": return <td className="py-3 px-4">{row.companyName}</td>;
             case "itemName": return <td className="py-3 px-4">{row.itemName}</td>;
             case "packSize": return <td className="py-3 px-4">{row.packSize}</td>;
             case "itemCode": return <td className="py-3 px-4">{row.itemCode}</td>;
             case "totalQty": return <td className="py-3 px-4">{row.totalQty}</td>;
-            case "grossAmt": return <td className="py-3 px-4">{row.grossAmt}</td>;
+            case "grossAmt": return <td className="py-3 px-4">₹{row.grossAmt.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>;
             default: return null;
           }
         };
@@ -157,13 +201,19 @@ export default function ItemWiseSaleRegister() {
                   </SortableContext>
                 </DndContext>
               </thead>
-              <tbody>
-                {rows.map((row) => (
-                  <tr key={row.id} className="border-b hover:bg-gray-50">
-                    {columns.map((col) => renderCell(row, col.id))}
-                  </tr>
-                ))}
-              </tbody>
+              {loading ? (
+                <tbody><tr><td colSpan={columns.length} className="text-center py-10">Loading...</td></tr></tbody>
+              ) : error ? (
+                <tbody><tr><td colSpan={columns.length} className="text-center py-10 text-red-500">{error}</td></tr></tbody>
+              ) : (
+                <tbody>
+                  {rows.map((row) => (
+                    <tr key={row.id} className="border-b hover:bg-gray-50">
+                      {columns.map((col) => renderCell(row, col.id))}
+                    </tr>
+                  ))}
+                </tbody>
+              )}
             </table>
           </div>
         );

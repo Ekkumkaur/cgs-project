@@ -16,7 +16,7 @@ export default function ForgotPassword() {
     setLoading(true);
     try {
       const response = await axios.post(
-        "http://localhost:5000/api/auth/admin/forgot-password",
+        "http://51.20.132.233:5000/api/auth/admin/forgot-password",
         { email }
       );
 
@@ -45,7 +45,7 @@ export default function ForgotPassword() {
         {/* Illustration Side */}
         <div className="rounded-xl flex items-center justify-center bg-white p-10">
           <img
-            src={image} 
+            src={image}
             alt="forgot password illustration"
             className="w-full h-auto"
           />

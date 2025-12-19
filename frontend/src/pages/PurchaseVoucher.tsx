@@ -1,28 +1,69 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Trash2 } from "lucide-react";
 import { AdminLayout } from "../components/AdminLayout";
+import { getPurchaseVoucher } from "@/adminApi/purchaseDetailApi";
+import { toast } from "sonner";
+import { format } from "date-fns";
 
 export default function PurchaseVoucher() {
-  const [items, setItems] = useState([
-    {
-      id: 1,
-      company: "Plum Goodness",
-      product: "Moisturizer",
-      quantity: 1,
-      rate: 650,
-      discount: 650,
-      gstType: "IGST",
-      gstRate: "18%",
-    },
-  ]);
+  const [items, setItems] = useState<any[]>([]);
+  const [voucherData, setVoucherData] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  const fetchVoucherData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const response = await getPurchaseVoucher();
+      if (response.success) {
+        // The API returns an array, but we probably need the first item.
+        const voucher = response.data && response.data.length > 0 ? response.data[0] : null;
+        if (voucher) {
+          setVoucherData(voucher);
+          // Assuming items have a unique 'product' or '_id' field to use as a key
+          const processedItems = (voucher.items || []).map((item: any, index: number) => ({
+            ...item,
+            id: item._id || `item-${index}` // Ensure a unique id for each item
+          }));
+          setItems(processedItems);
+        }
+      } else {
+        toast.error(response.message || "Failed to fetch voucher data.");
+      }
+    } catch (error) {
+      toast.error("An error occurred while fetching the voucher.");
+      console.error(error);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchVoucherData();
+  }, [fetchVoucherData]);
+
+  const handleItemChange = (id: string, field: string, value: any) => {
+    setItems(
+      items.map((item) => {
+        if (item.id === id) {
+          const updatedItem = { ...item, [field]: value };
+          // Recalculate amount when quantity or rate changes
+          if (field === "quantity" || field === "rate") {
+            updatedItem.amount = (updatedItem.quantity || 0) * (updatedItem.rate || 0);
+          }
+          return updatedItem;
+        }
+        return item;
+      })
+    );
+  };
 
   const handleAddItem = () => {
     setItems([
       ...items,
       {
-        id: items.length + 1,
+        id: `new-${items.length + 1}`, // Use a unique key for new items
         company: "",
         product: "",
         quantity: 1,
@@ -39,12 +80,19 @@ export default function PurchaseVoucher() {
   };
 
   const total = items.reduce(
-    (sum, item) => sum + (item.rate * item.quantity),
+    (sum, item) => sum + (item.amount || (item.rate || 0) * (item.quantity || 0)),
     0
   );
 
   return (
     <AdminLayout title="Purchase > Purchase Voucher">
+      {loading && (
+        <div className="flex justify-center items-center h-64">
+          <p>Loading Voucher...</p>
+        </div>
+      )}
+
+      {!loading && voucherData && (
       <div className="p-8 max-w-7xl mx-auto">
 
         {/* TOP FORM */}
@@ -69,15 +117,15 @@ export default function PurchaseVoucher() {
           {/* Data Row */}
           <div className="grid grid-cols-3 gap-0 bg-white rounded-b-md border border-t-0 border-gray-200">
             <div className="border-r border-gray-200 px-4 py-3">
-              <Input className="bg-white border-0 text-sm h-auto p-0 focus:ring-0" value="PV-2025-004" readOnly />
+              <Input className="bg-white border-0 text-sm h-auto p-0 focus:ring-0" value={voucherData.purchaseId || ''} readOnly />
             </div>
 
             <div className="border-r border-gray-200 px-4 py-3">
-              <Input className="bg-white border-0 text-sm h-auto p-0 focus:ring-0" value="03-31-25" readOnly />
+              <Input className="bg-white border-0 text-sm h-auto p-0 focus:ring-0" value={voucherData.date ? format(new Date(voucherData.date), "dd-MMM-yyyy") : ''} readOnly />
             </div>
 
             <div className="px-4 py-3 flex items-center justify-between">
-              <span className="text-sm text-gray-700">L'Oreal Distributor</span>
+              <span className="text-sm text-gray-700">{voucherData.supplierName || 'N/A'}</span>
               <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
               </svg>
@@ -125,40 +173,55 @@ export default function PurchaseVoucher() {
                   <td className="py-3 px-3 text-gray-700">{index + 1}</td>
 
                   <td className="py-3 px-3">
-                    <select className="border border-gray-300 rounded p-1.5 w-full bg-white text-xs">
-                      <option>Plum Goodness</option>
+                    <select 
+                      className="border border-gray-300 rounded p-1.5 w-full bg-white text-xs" 
+                      value={item.companyName || ''} 
+                      onChange={(e) => handleItemChange(item.id, 'companyName', e.target.value)}
+                    >
+                      {/* You might want to populate this with a list of companies */}
+                      <option value={item.companyName || ''}>{item.companyName || 'Select Company'}</option>
                     </select>
                   </td>
 
                   <td className="py-3 px-3">
-                    <select className="border border-gray-300 rounded p-1.5 w-full bg-white text-xs">
-                      <option>Moisturizer</option>
+                    <select 
+                      className="border border-gray-300 rounded p-1.5 w-full bg-white text-xs" 
+                      value={item.productName || ''} 
+                      onChange={(e) => handleItemChange(item.id, 'productName', e.target.value)}
+                    >
+                      {/* This should be populated based on the selected company */}
+                      <option value={item.productName || ''}>{item.productName || 'Select Product'}</option>
                     </select>
                   </td>
 
                   <td className="py-3 px-3">
                     <Input
                       type="number"
-                      value={item.quantity}
+                      value={item.quantity || ''}
                       className="w-16 border-gray-300 h-8 text-xs"
-                      readOnly
+                      onChange={(e) => handleItemChange(item.id, 'quantity', parseFloat(e.target.value))}
                     />
                   </td>
 
                   <td className="py-3 px-3">
                     <Input
                       type="number"
-                      value={item.rate}
+                      value={item.rate || ''}
                       className="w-20 border-gray-300 h-8 text-xs"
-                      readOnly
+                      onChange={(e) => handleItemChange(item.id, 'rate', parseFloat(e.target.value))}
                     />
                   </td>
 
-                  <td className="py-3 px-3 text-gray-700">{item.rate * item.quantity}</td>
+                  <td className="py-3 px-3 text-gray-700">{(item.amount || 0).toLocaleString('en-IN')}</td>
 
                   <td className="py-3 px-3">
-                    <select className="border border-gray-300 rounded p-1.5 w-20 bg-white text-xs">
-                      <option>{item.discount}</option>
+                    <select 
+                      className="border border-gray-300 rounded p-1.5 w-20 bg-white text-xs" 
+                      value={item.discountType || 'percentage'}
+                      onChange={(e) => handleItemChange(item.id, 'discountType', e.target.value)}
+                    >
+                      <option value="percentage">{item.discount || 0}%</option>
+                      <option value="amount">Amount</option>
                     </select>
                   </td>
 
@@ -202,7 +265,7 @@ export default function PurchaseVoucher() {
         {/* TOTAL SECTION */}
         <div className="mt-6 flex justify-center">
           <div className="bg-[#E89B87] text-white text-sm font-medium px-20 py-3 rounded-lg">
-            Total Amount : ₹{total}
+            Total Amount : ₹{total.toLocaleString('en-IN')}
           </div>
         </div>
 
@@ -228,6 +291,7 @@ export default function PurchaseVoucher() {
           </Button>
         </div>
       </div>
+      )}
     </AdminLayout>
   );
 }

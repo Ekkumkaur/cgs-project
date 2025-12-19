@@ -1,8 +1,16 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { AdminLayout } from "@/components/AdminLayout";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Search, Calendar, Edit3 } from "lucide-react";
+import { Search, Calendar, Edit3, Trash2, Eye, Undo2 } from "lucide-react";
+import { toast } from "sonner";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   DndContext,
   closestCenter,
@@ -16,19 +24,35 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 
+import {
+  getAllPurchaseDetails,
+  deletePurchaseDetail,
+  addPurchaseDetail,
+  updatePurchaseDetail,
+} from "@/adminApi/purchaseDetailApi";
+import { getAllSuppliers } from "@/adminApi/supplierApi";
+import { format } from "date-fns";
+
 export default function PurchaseDetail() {
-  const purchaseData = Array.from({ length: 10 }, (_, i) => ({
-    uid: i,
-    id: "CGS0021",
-    supplier: "ROHIT KUMAR",
-    date: "04-OCT-2025",
-    amount: "₹15,000",
-    payment: "UPI",
-    status: "PAID",
-  }));
+  const [purchases, setPurchases] = useState([]);
+  const [suppliers, setSuppliers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showModal, setShowModal] = useState(false);
+  const [editingPurchase, setEditingPurchase] = useState(null);
+  const [formLoading, setFormLoading] = useState(false);
+  const [showViewModal, setShowViewModal] = useState(false);
+  const [selectedPurchase, setSelectedPurchase] = useState(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [newPurchase, setNewPurchase] = useState({
+    supplier: "",
+    date: "",
+    totalAmount: "",
+    paymentMethod: "CASH",
+    status: "PENDING",
+  });
 
   const initialColumns = [
-    { id: "id", label: "PURCHASE ID" },
+    { id: "purchaseId", label: "PURCHASE ID" },
     { id: "supplier", label: "SUPPLIER NAME" },
     { id: "date", label: "DATE" },
     { id: "amount", label: "TOTAL AMOUNT" },
@@ -39,12 +63,147 @@ export default function PurchaseDetail() {
 
   const [columns, setColumns] = useState(() => {
     const savedOrder = localStorage.getItem("purchaseDetailColumnOrder");
-    return savedOrder ? JSON.parse(savedOrder) : initialColumns;
+    // Temporarily force initialColumns to debug column order issue
+    return initialColumns; // savedOrder ? JSON.parse(savedOrder) : initialColumns;
   });
+
+  const fetchPurchases = useCallback(async () => {
+    setLoading(true);
+    try {
+      const response = await getAllPurchaseDetails();
+      if (response.success) {
+        setPurchases(response.data || []);
+      } else {
+        toast.error(response.message || "Failed to fetch purchase details.");
+      }
+    } catch (error) {
+      toast.error("An error occurred while fetching purchase details.");
+      console.error(error);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const fetchSuppliers = useCallback(async () => {
+    try {
+      const response = await getAllSuppliers();
+      // The response for getAllSuppliers is { success: boolean, suppliers: [] }
+      // or { success: boolean, data: [] }
+      // We need to handle both cases to be safe.
+      if (response.success) {
+        const supplierList = response.data || response.suppliers || [];
+        setSuppliers(supplierList);
+      }
+    } catch (error) {
+      // Don't toast error for this, as it's a secondary fetch
+      console.error("Failed to fetch suppliers for dropdown.");
+    }
+  }, []);
+
+  const handleDelete = async (purchaseId: string) => {
+    if (window.confirm("Are you sure you want to delete this purchase record?")) {
+      try {
+        const response = await deletePurchaseDetail(purchaseId);
+        if (response.success) {
+          toast.success(response.message || "Purchase deleted successfully!");
+          fetchPurchases(); // Refresh the list
+        } else {
+          toast.error(response.message || "Failed to delete purchase.");
+        }
+      } catch (error) {
+        toast.error("An error occurred while deleting the purchase.");
+      }
+    }
+  };
+
+  const handleEditClick = (purchase) => {
+    setEditingPurchase(purchase);
+    setNewPurchase({
+      supplier: purchase.supplier?._id || "",
+      date: format(new Date(purchase.date), "yyyy-MM-dd"),
+      totalAmount: purchase.totalAmount.toString(),
+      paymentMethod: purchase.paymentMethod,
+      status: purchase.status,
+    });
+    setShowModal(true);
+  };
+
+  const handleViewClick = (purchase) => {
+    setSelectedPurchase(purchase);
+    setShowViewModal(true);
+  };
+
+  const resetForm = () => {
+    setNewPurchase({
+      supplier: "",
+      date: "",
+      totalAmount: "",
+      paymentMethod: "CASH",
+      status: "PENDING",
+    });
+    setShowModal(false);
+    setEditingPurchase(null);
+    setFormLoading(false);
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setNewPurchase((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleSelectChange = (name: string, value: string) => {
+    setNewPurchase((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleFormSubmit = async () => {
+    if (!newPurchase.supplier || !newPurchase.date || !newPurchase.totalAmount) {
+      toast.error("Please fill all required fields: Supplier, Date, and Amount.");
+      return;
+    }
+
+    setFormLoading(true);
+    try {
+      const payload = {
+        ...newPurchase,
+        totalAmount: Number(newPurchase.totalAmount),
+        items: [],
+      };
+
+      let response;
+      if (editingPurchase) {
+        response = await updatePurchaseDetail(editingPurchase._id, payload);
+      } else {
+        response = await addPurchaseDetail(payload);
+      }
+
+      if (response.success) {
+        toast.success(response.message || `Purchase ${editingPurchase ? 'updated' : 'added'} successfully!`);
+        fetchPurchases();
+        resetForm();
+      } else {
+        toast.error(response.message || "An operation failed.");
+      }
+    } catch (error) {
+      toast.error("An error occurred.");
+      console.error(error);
+    } finally {
+      setFormLoading(false);
+    }
+  };
 
   useEffect(() => {
     localStorage.setItem("purchaseDetailColumnOrder", JSON.stringify(columns));
   }, [columns]);
+
+  useEffect(() => {
+    fetchPurchases();
+    fetchSuppliers();
+  }, [fetchPurchases, fetchSuppliers]);
+
+  const filteredPurchases = purchases.filter(p =>
+    (p.purchaseId?.toLowerCase().includes(searchQuery.toLowerCase())) ||
+    (p.supplierName?.toLowerCase().includes(searchQuery.toLowerCase()))
+  );
 
   const SortableHeader = ({ column }: { column: { id: string; label: string } }) => {
     const { attributes, listeners, setNodeRef, transform, transition } =
@@ -60,7 +219,7 @@ export default function PurchaseDetail() {
         style={style}
         {...attributes}
         {...listeners}
-        className="py-3 px-4 font-semibold cursor-grab"
+        className="py-3 px-4 font-semibold cursor-grab text-center"
       >
         {column.label}
       </th>
@@ -75,8 +234,10 @@ export default function PurchaseDetail() {
           <div className="flex items-center gap-2 w-[350px]">
             <Input
               type="text"
-              placeholder="Search by Bill ID, date, Customer"
+              placeholder="Search by Purchase ID or Supplier"
               className="rounded-full bg-[#fff7f6] border border-[#f3cdc8] text-gray-700 placeholder-gray-400 focus:ring-0 focus:border-[#e48a7c]"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
             />
             <Button
               variant="ghost"
@@ -93,6 +254,12 @@ export default function PurchaseDetail() {
               <Calendar size={18} />
             </Button>
           </div>
+          <Button
+            className="bg-[#e48a7c] hover:bg-[#d77b6f] text-white rounded-full px-6"
+            onClick={() => setShowModal(true)}
+          >
+            + Add Purchase
+          </Button>
         </div>
 
         {/* Table */}
@@ -112,19 +279,29 @@ export default function PurchaseDetail() {
 
           const renderCell = (item: any, columnId: string) => {
             switch (columnId) {
-              case "id": return <td className="py-3 px-4">{item.id}</td>;
-              case "supplier": return <td className="py-3 px-4">{item.supplier}</td>;
-              case "date": return <td className="py-3 px-4">{item.date}</td>;
-              case "amount": return <td className="py-3 px-4">{item.amount}</td>;
-              case "payment": return <td className="py-3 px-4">{item.payment}</td>;
-              case "status": return <td className="py-3 px-4 text-[#0b7c24] font-semibold">{item.status}</td>;
-              case "actions": return (
-                <td className="py-3 px-4 flex items-center justify-center gap-2">
-                  <button className="text-[#0b64c0] text-sm font-medium hover:underline">[VIEW]</button>
-                  <button className="text-[#e48a7c] text-sm font-medium hover:underline">[RETURN]</button>
-                  <Edit3 size={16} className="text-gray-600 cursor-pointer hover:text-[#e48a7c]" />
-                </td>
-              );
+              case "purchaseId": return <td className="py-3 px-4">{item.purchaseId}</td>;
+              case "supplier": return <td className="py-3 px-4">{item.supplier?.name || item.supplierName || 'N/A'}</td>;
+              case "date": return <td className="py-3 px-4">{format(new Date(item.date), "dd-MMM-yyyy")}</td>;
+              case "amount": return <td className="py-3 px-4">₹{item.totalAmount?.toLocaleString('en-IN') || 0}</td>;
+              case "payment": return <td className="py-3 px-4">{item.paymentMethod}</td>;
+              case "status": return <td className={`py-3 px-4 font-semibold ${item.status === 'PAID' ? 'text-green-600' : 'text-red-600'}`}>{item.status}</td>;
+              case "actions":
+                return (
+                  <td className="py-3 px-4 flex items-center justify-center gap-2">
+                    <button onClick={() => handleViewClick(item)} className="w-8 h-8 flex items-center justify-center border border-blue-500 text-blue-500 rounded-full hover:bg-blue-50 transition-colors" title="View Details">
+                      <Eye size={16} />
+                    </button>
+                    <button className="w-8 h-8 flex items-center justify-center border border-orange-500 text-orange-500 rounded-full hover:bg-orange-50 transition-colors" title="Return Purchase">
+                      <Undo2 size={16} />
+                    </button>
+                    <button onClick={() => handleEditClick(item)} className="w-8 h-8 flex items-center justify-center border border-gray-400 text-gray-600 rounded-full hover:bg-gray-100 transition-colors" title="Edit Purchase">
+                      <Edit3 size={16} />
+                    </button>
+                    <button onClick={() => handleDelete(item._id)} className="w-8 h-8 flex items-center justify-center border border-red-400 text-red-500 rounded-full hover:bg-red-50 transition-colors" title="Delete Purchase">
+                      <Trash2 size={16} />
+                    </button>
+                  </td>
+                );
               default: return null;
             }
           };
@@ -144,14 +321,24 @@ export default function PurchaseDetail() {
                   </DndContext>
                 </thead>
                 <tbody>
-                  {purchaseData.map((item) => (
-                    <tr
-                      key={item.uid}
-                      className="border-b hover:bg-[#fff7f6] transition-colors"
-                    >
-                      {columns.map((col) => renderCell(item, col.id))}
+                  {loading ? (
+                    <tr>
+                      <td colSpan={columns.length} className="text-center py-10">Loading purchase details...</td>
                     </tr>
-                  ))}
+                  ) : filteredPurchases.length > 0 ? (
+                    filteredPurchases.map((item) => (
+                      <tr
+                        key={item._id}
+                        className="border-b hover:bg-[#fff7f6] transition-colors"
+                      >
+                        {columns.map((col) => renderCell(item, col.id))}
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={columns.length} className="text-center py-10">No purchase details found.</td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -177,6 +364,122 @@ export default function PurchaseDetail() {
           </button>
         </div>
       </div>
+
+      {/* Add/Edit Purchase Modal */}
+      {showModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
+          <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold">{editingPurchase ? "Edit Purchase" : "Add New Purchase"}</h3>
+              <button onClick={resetForm} className="text-gray-500 hover:text-gray-800">&times;</button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm font-medium">Supplier <span className="text-red-500">*</span></label>
+                <Select value={newPurchase.supplier} onValueChange={(value) => handleSelectChange("supplier", value)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a supplier" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {suppliers.map((supplier) => (
+                      <SelectItem key={supplier._id} value={supplier._id}>{supplier.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-sm font-medium">Date <span className="text-red-500">*</span></label>
+                <Input type="date" name="date" value={newPurchase.date} onChange={handleInputChange} />
+              </div>
+              <div>
+                <label className="text-sm font-medium">Total Amount <span className="text-red-500">*</span></label>
+                <Input type="number" name="totalAmount" placeholder="e.g., 15000" value={newPurchase.totalAmount} onChange={handleInputChange} />
+              </div>
+              <div>
+                <label className="text-sm font-medium">Payment Method</label>
+                <Select value={newPurchase.paymentMethod} onValueChange={(value) => handleSelectChange("paymentMethod", value)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="CASH">Cash</SelectItem>
+                    <SelectItem value="CREDIT">Credit</SelectItem>
+                    <SelectItem value="UPI">UPI</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-sm font-medium">Status</label>
+                <Select value={newPurchase.status} onValueChange={(value) => handleSelectChange("status", value)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="PAID">Paid</SelectItem>
+                    <SelectItem value="PENDING">Pending</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button onClick={handleFormSubmit} disabled={formLoading} className="w-full bg-[#e48a7c] hover:bg-[#d77b6f] text-white">
+                {formLoading ? "Saving..." : (editingPurchase ? "Update Purchase" : "Add Purchase")}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* View Purchase Modal */}
+      {showViewModal && selectedPurchase && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-50 p-4" onClick={() => setShowViewModal(false)}>
+          <div className="bg-gray-50 rounded-2xl shadow-2xl w-full max-w-2xl animate-fade-in-down overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            {/* Header */}
+            <div className="bg-[#E98C81] p-6 relative">
+              <button onClick={() => setShowViewModal(false)} className="absolute top-3 right-3 text-white/70 hover:text-white transition-colors">
+                <span className="text-2xl">&times;</span>
+              </button>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-white/80 font-bold">Purchase ID: {selectedPurchase.purchaseId}</p>
+                  <h2 className="text-2xl font-bold text-white">{selectedPurchase.supplierName}</h2>
+                </div>
+                <div className={`px-4 py-1.5 rounded-full text-sm font-bold ${selectedPurchase.status === 'PAID' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                  {selectedPurchase.status}
+                </div>
+              </div>
+            </div>
+
+            {/* Details Section */}
+            <div className="p-6 space-y-5">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                <div className="bg-white p-4 rounded-lg shadow-sm">
+                  <p className="text-gray-500 mb-1">Purchase Date</p>
+                  <p className="font-semibold text-gray-800">{format(new Date(selectedPurchase.date), "dd MMMM, yyyy")}</p>
+                </div>
+                <div className="bg-white p-4 rounded-lg shadow-sm">
+                  <p className="text-gray-500 mb-1">Total Amount</p>
+                  <p className="font-semibold text-gray-800">₹{selectedPurchase.totalAmount.toLocaleString('en-IN')}</p>
+                </div>
+                <div className="bg-white p-4 rounded-lg shadow-sm">
+                  <p className="text-gray-500 mb-1">Payment Method</p>
+                  <p className="font-semibold text-gray-800">{selectedPurchase.paymentMethod}</p>
+                </div>
+              </div>
+
+              {/* Items List */}
+              <div>
+                <h3 className="font-semibold text-gray-700 mb-3">Items in this Purchase</h3>
+                <div className="bg-white p-4 rounded-lg shadow-sm">
+                  {selectedPurchase.items && selectedPurchase.items.length > 0 ? (
+                    <p>Item list will be displayed here.</p> // Placeholder for item table
+                  ) : (
+                    <p className="text-gray-500 text-center py-4">No items were recorded for this purchase.</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </AdminLayout>
   );
 }
