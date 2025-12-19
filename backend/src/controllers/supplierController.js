@@ -1,15 +1,66 @@
 import Supplier from "../models/supplier.js";
+import Purchase from "../models/purchase.js";
+import PurchaseReturn from "../models/return.js";
+import mongoose from "mongoose";
+
+// 📊 SUPPLIER SUMMARY
+export const getSupplierSummary = async (req, res) => {
+  try {
+    const suppliers = await Supplier.find();
+
+    const data = await Promise.all(
+      suppliers.map(async (sup) => {
+        const purchases = await Purchase.countDocuments({ supplier: sup._id });
+        const returns = await PurchaseReturn.countDocuments({ supplier: sup._id });
+
+        return {
+          supplierId: sup.supplierId,
+          name: sup.name,
+          companyName: sup.companyName,
+          mobileNumber: sup.mobileNumber,
+          purchases,
+          returns,
+        };
+      })
+    );
+
+    res.json({ success: true, data });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
 
 // Auto Supplier ID Generator
 async function generateSupplierId() {
-  const count = await Supplier.countDocuments();
-  const num = (count + 1).toString().padStart(3, "0");
-  return `CGS${num}`;
+  // Find the last supplier created to ensure the ID is sequential and unique
+  const lastSupplier = await Supplier.findOne().sort({ createdAt: -1 });
+
+  let nextIdNumber = 1;
+  if (lastSupplier && lastSupplier.supplierId) {
+    // Extract the number from the last supplier's ID (e.g., "CGS005" -> 5)
+    const lastIdNumber = parseInt(lastSupplier.supplierId.replace("CGS", ""), 10);
+    if (!isNaN(lastIdNumber)) {
+      nextIdNumber = lastIdNumber + 1;
+    }
+  }
+
+  return `CGS${nextIdNumber.toString().padStart(3, "0")}`;
 }
 
 // ADD SUPPLIER
 export const addSupplier = async (req, res) => {
   try {
+    const { email } = req.body;
+
+    // Check if a supplier with the same email already exists
+    if (email) {
+      const existingSupplier = await Supplier.findOne({ email });
+      if (existingSupplier) {
+        return res
+          .status(409)
+          .json({ success: false, message: "A supplier with this email already exists." });
+      }
+    }
     const supplierId = await generateSupplierId();
 
     const supplier = await Supplier.create({
@@ -23,7 +74,14 @@ export const addSupplier = async (req, res) => {
       supplier,
     });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    // Handle other potential errors, including unique constraint violations from the database
+    if (error.code === 11000) {
+      return res.status(409).json({
+        success: false,
+        message: "A supplier with this information already exists.",
+      });
+    }
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
@@ -37,35 +95,47 @@ export const getSuppliers = async (req, res) => {
       suppliers,
     });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
 // GET SINGLE SUPPLIER
 export const getSupplier = async (req, res) => {
   try {
-    const supplier = await Supplier.findById(req.params.id);
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid supplier id",
+      });
+    }
+
+    const supplier = await Supplier.findById(id);
 
     if (!supplier)
       return res.status(404).json({ success: false, message: "Not found" });
 
     res.json({ success: true, supplier });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
 // UPDATE SUPPLIER
 export const updateSupplier = async (req, res) => {
   try {
-    const supplier = await Supplier.findByIdAndUpdate(
-      req.params.id,
+    const { id } = req.params;
+
+    const supplier = await Supplier.findOneAndUpdate(
+      { $or: [{ _id: id }, { supplierId: id }] },
       req.body,
-      { new: true }
+      { new: true, runValidators: true }
     );
 
-    if (!supplier)
+    if (!supplier) {
       return res.status(404).json({ success: false, message: "Not found" });
+    }
 
     res.json({
       success: true,
@@ -73,20 +143,29 @@ export const updateSupplier = async (req, res) => {
       supplier,
     });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
 // DELETE SUPPLIER
 export const deleteSupplier = async (req, res) => {
   try {
-    const supplier = await Supplier.findByIdAndDelete(req.params.id);
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid supplier id",
+      });
+    }
+
+    const supplier = await Supplier.findByIdAndDelete(id);
 
     if (!supplier)
       return res.status(404).json({ success: false, message: "Not found" });
 
     res.json({ success: true, message: "Supplier deleted" });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    res.status(500).json({ success: false, message: error.message });
   }
 };

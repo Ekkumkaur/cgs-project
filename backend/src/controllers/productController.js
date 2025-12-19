@@ -145,3 +145,33 @@ export const deleteProduct = async (req, res) => {
     return res.status(500).json(responseHandler.error(err.message));
   }
 };
+
+// Search products for autofetch (public)
+export const searchProducts = async (req, res) => {
+  try {
+    const { term } = req.query;
+
+    if (!term || !term.trim()) {
+      return res
+        .status(400)
+        .json(responseHandler.error("Search term is required."));
+    }
+
+    const searchTerm = term.trim();
+
+    const products = await Product.find({
+      $or: [
+        { productName: { $regex: searchTerm, $options: "i" } },
+        { itemCode: { $regex: searchTerm, $options: "i" } },
+      ],
+    })
+      .select("productName brandName mrp itemCode") // Select only fields needed for autofetch
+      .limit(10); // Limit results for performance
+
+    return res.json(
+      responseHandler.success(products, "Products fetched successfully")
+    );
+  } catch (err) {
+    return res.status(500).json(responseHandler.error(err.message));
+  }
+};

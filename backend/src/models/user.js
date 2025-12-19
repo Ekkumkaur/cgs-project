@@ -33,8 +33,12 @@ const userSchema = new mongoose.Schema(
       }
     ],
   },
-  { timestamps: true }
+  { timestamps: true, toJSON: { virtuals: true }, toObject: { virtuals: true } }
 );
+
+userSchema.virtual("name").get(function () {
+  return `${this.firstName || ""} ${this.lastName || ""}`.trim();
+});
 
 // Hash password before saving
 userSchema.pre("save", async function (next) {

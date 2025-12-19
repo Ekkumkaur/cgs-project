@@ -28,14 +28,15 @@ import billRoutes from "./routes/billRoutes.js";
 
 import ledgerRoutes from "./routes/ledgerRoutes.js";
 
-import newBillRoutes from "./routes/newBillRoute.js";
-
 import supplierRoutes from "./routes/supplierRoutes.js";
 
 import adminRoutes from "./routes/adminRoutes.js";
 
+import purchaseRoutes from "./routes/purchaseRoutes.js";
 
+import purchaseReturnRoutes from "./routes/returnRoutes.js";
 
+import reportRoutes from "./routes/reportRoutes.js";
 
 dotenv.config();
 connectDB();
@@ -75,9 +76,11 @@ app.use("/api/customers", customerRoutes);
 // app.use("/api/tickets", ticketRoutes);
 app.use("/api/bills", billRoutes);
 app.use("/api/ledger", ledgerRoutes);
-app.use("/api/newbill", newBillRoutes);
 app.use("/api/suppliers", supplierRoutes);
 app.use("/api/admin", adminRoutes);
+app.use("/api/purchases", purchaseRoutes);
+app.use("/api/purchase-returns", purchaseReturnRoutes);
+app.use("/api/reports", reportRoutes);
 
 app.get("/", (_, res) => res.send("E-commerce backend running ✅"));
 

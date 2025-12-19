@@ -5,6 +5,7 @@ import {
   getAllProducts,
   updateProduct,
   deleteProduct,
+  searchProducts,
 } from "../controllers/productController.js";
 
 import protect, { adminOnly } from "../middleware/authMiddleware.js";
@@ -20,6 +21,7 @@ router.delete("/:id", protect, adminOnly, deleteProduct);
 
 // Public routes
 router.get("/", getAllProducts);
+router.get("/search", searchProducts);
 router.get("/:id", getProductById);
 
 export default router;

@@ -1,193 +1,415 @@
-// controllers/bill.controller.js
 import Bill from "../models/bill.js";
+import Product from "../models/product.js";
+import mongoose from "mongoose";
 
-// Helper to format date
-const formatDate = (date) => {
-  if (!date) return null;
-  return new Date(date).toISOString().split("T")[0];
-};
+/* ================= CREATE BILL ================= */
 
-// CREATE BILL
 export const addBill = async (req, res) => {
   try {
-    const bill = await Bill.create(req.body);
+    const {
+      billDate,
+      items,
+      paymentMode,
+      paidAmount,
+      roundOff,
+      notes,
+    } = req.body;
+
+    const customerId = req.body.customerId || req.params.customerId;
+
+    if (!customerId || !items?.length) {
+      return res.status(400).json({ message: "Required fields missing" });
+    }
+
+    let finalItems = [];
+
+    let totalQty = 0;
+    let grossAmount = 0;
+    let totalDiscount = 0;
+    let taxableAmount = 0;
+    let totalCGST = 0;
+    let totalSGST = 0;
+
+    for (const item of items) {
+      let product = null;
+
+      /* 🔹 FIND PRODUCT */
+      if (item.productId) {
+        const pId = String(item.productId).trim();
+        if (mongoose.Types.ObjectId.isValid(pId)) {
+          product = await Product.findById(pId);
+        }
+        if (!product) {
+          product = await Product.findOne({ itemCode: pId });
+        }
+      }
+
+      if (!product && item.itemCode) {
+        product = await Product.findOne({ itemCode: item.itemCode });
+      }
+
+      if (!product) {
+        return res.status(404).json({
+          message: `Product not found for ${item.productId || item.itemCode}`,
+        });
+      }
+
+      /* 🔹 CALCULATIONS */
+      const qty = Number(item.qty || 0);
+      const rate = Number(item.rate || product.mrp);
+      const discountAmount = Number(item.discountAmount || 0);
+
+      const gross = rate * qty;
+      const taxable = gross - discountAmount;
+
+      const gstPercent = Number(product.gst || 0);
+      const cgst = (taxable * gstPercent) / 200;
+      const sgst = (taxable * gstPercent) / 200;
+
+      const total = taxable + cgst + sgst;
+
+      /* 🔹 FINAL ITEM SNAPSHOT */
+      finalItems.push({
+        productId: product._id,
+        sno: item.sno,
+
+        itemCode: product.itemCode,
+        itemName: product.productName,
+        companyName: product.brandName,
+
+        hsnCode: product.hsnCode,
+        packing: product.packSize,
+        batch: item.batch || "",
+
+        qty,
+        freeQty: item.freeQty || 0,
+
+        mrp: product.mrp,
+        rate,
+
+        discountPercent: Number(product.discount || 0),
+        discountAmount,
+
+        taxableAmount: taxable,
+        gstPercent,
+        cgst,
+        sgst,
+        igst: 0,
+
+        total,
+      });
+
+      totalQty += qty;
+      grossAmount += gross;
+      totalDiscount += discountAmount;
+      taxableAmount += taxable;
+      totalCGST += cgst;
+      totalSGST += sgst;
+    }
+
+    /* ================= GENERATE BILL NO ================= */
+    const lastBill = await Bill.findOne().sort({ createdAt: -1 });
+    let nextNum = 1;
+    if (lastBill && lastBill.billNo) {
+      const match = lastBill.billNo.match(/(\d+)$/);
+      if (match) {
+        nextNum = parseInt(match[1], 10) + 1;
+      }
+    }
+    const newBillNo = `BILL${String(nextNum).padStart(4, "0")}`;
+
+    const netAmount =
+      taxableAmount + totalCGST + totalSGST + (roundOff || 0);
+
+    const balanceAmount = netAmount - (paidAmount || 0);
+
+    const status =
+      balanceAmount === 0
+        ? "Paid"
+        : paidAmount > 0
+        ? "Partial"
+        : "Unpaid";
+
+    const bill = await Bill.create({
+      customerId,
+      billNo: newBillNo,
+      billDate,
+      items: finalItems,
+
+      totalQty,
+      grossAmount,
+      totalDiscount,
+      taxableAmount,
+      totalCGST,
+      totalSGST,
+      totalIGST: 0,
+      roundOff,
+      netAmount,
+
+      paymentMode,
+      paidAmount,
+      balanceAmount,
+      status,
+
+      notes,
+    });
+
+    // Populate customer details for the response
+    await bill.populate("customerId", "firstName lastName phoneNumber email");
 
     res.status(201).json({
       success: true,
-      message: "Bill created successfully",
+      message: `Bill generated successfully: ${bill.billNo}`,
       bill,
     });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    res.status(500).json({ message: error.message });
   }
 };
 
-// GET ALL BILLS
-export const getAllBills = async (req, res) => {
+
+/* ================= GET ALL BILLS ================= */
+export const getBills = async (req, res) => {
   try {
-    const bills = await Bill.find().sort({ createdAt: -1 }).lean();
+    const bills = await Bill.find()
+      .populate("customerId", "firstName lastName phoneNumber gstNumber")
+      .populate("agentId", "name")
+      .sort({ createdAt: -1 });
 
-    const formattedBills = bills.map(bill => ({
-      ...bill,
-      date: formatDate(bill.date),
-      createdAt: formatDate(bill.createdAt),
-      updatedAt: formatDate(bill.updatedAt),
-      returnDate: formatDate(bill.returnDate),
-    }));
-
-    res.status(200).json({
-      success: true,
-      bills: formattedBills,
-    });
+    res.json(bills);
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    res.status(500).json({ message: error.message });
   }
 };
 
-// GET BILL BY ID
+/* ================= GET SINGLE BILL ================= */
 export const getBillById = async (req, res) => {
   try {
-    const bill = await Bill.findById(req.params.id).lean();
-
-    if (!bill)
-      return res.status(404).json({ success: false, message: "Bill not found" });
-
-    const formattedBill = {
-      ...bill,
-      date: formatDate(bill.date),
-      createdAt: formatDate(bill.createdAt),
-      updatedAt: formatDate(bill.updatedAt),
-      returnDate: formatDate(bill.returnDate),
-    };
-
-    res.status(200).json({ success: true, bill: formattedBill });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-};
-
-// GET BILLS BY DATE RANGE
-export const getBillsByDateRange = async (req, res) => {
-  try {
-    const { startDate, endDate } = req.query;
-
-    if (!startDate || !endDate) {
-      return res.status(400).json({ success: false, message: "Start date and end date are required" });
-    }
-
-    const bills = await Bill.find({
-      date: {
-        $gte: new Date(startDate),
-        $lte: new Date(endDate),
-      },
-    })
-      .sort({ createdAt: -1 })
-      .lean();
-
-    const formattedBills = bills.map(bill => ({
-      ...bill,
-      date: formatDate(bill.date),
-      createdAt: formatDate(bill.createdAt),
-      updatedAt: formatDate(bill.updatedAt),
-      returnDate: formatDate(bill.returnDate),
-    }));
-    res.status(200).json({ success: true, bills: formattedBills });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-};
-
-// DELETE BILL
-export const deleteBill = async (req, res) => {
-  try {
-    const bill = await Bill.findByIdAndDelete(req.params.id);
-
-    if (!bill)
-      return res.status(404).json({ success: false, message: "Bill not found" });
-
-    res.status(200).json({ success: true, message: "Bill deleted" });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-};
-
-//return bill
-export const returnBill = async (req, res) => {
-  try {
-    const billId = req.params.id;
-
-    let bill = await Bill.findById(billId);
+    const bill = await Bill.findById(req.params.id)
+      .populate("customerId")
+      .populate("agentId")
+      .populate("items.productId");
 
     if (!bill) {
-      return res.status(404).json({
-        success: false,
-        message: "Bill not found",
-      });
+      return res.status(404).json({ message: "Bill not found" });
     }
 
-    // If already returned
-    if (bill.isReturned) {
-      return res.status(400).json({
-        success: false,
-        message: "Bill is already returned",
-      });
+    res.json(bill);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+/* ================= DATE RANGE ================= */
+export const getBillsByDateRange = async (req, res) => {
+  try {
+    const { from, to } = req.query;
+
+    const filter = {};
+    if (from && to) {
+      filter.billDate = {
+        $gte: new Date(from),
+        $lte: new Date(to),
+      };
     }
 
-    bill.isReturned = true;
-    bill.returnDate = new Date();
-    bill.paymentStatus = "UNPAID"; // optional: depending your logic
+    const bills = await Bill.find(filter)
+      .populate("customerId", "firstName lastName phoneNumber gstNumber")
+      .populate("agentId", "name")
+      .sort({ billDate: -1 });
+
+    res.json(bills);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+/* ================= GET BILLS BY CUSTOMER ================= */
+export const getBillsByCustomer = async (req, res) => {
+  try {
+    const { customerId } = req.params;
+    if (!customerId) {
+      return res.status(400).json({ message: "Customer ID is required" });
+    }
+
+    const bills = await Bill.find({ customerId })
+      .populate("customerId", "firstName lastName phoneNumber")
+      .sort({ billDate: -1 });
+
+    if (!bills || bills.length === 0) {
+      return res.status(404).json({ success: false, message: "No bills found for this customer" });
+    }
+
+    res.status(200).json({ success: true, bills });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+export const updateBill = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const {
+      customerId,
+      agentId,
+      billNo,
+      billDate,
+      items,
+      paymentMode,
+      paidAmount,
+      roundOff,
+      notes,
+    } = req.body;
+
+    const bill = await Bill.findById(id);
+    if (!bill) {
+      return res.status(404).json({ message: "Bill not found" });
+    }
+
+    /* ---------- RECALCULATE TOTALS ---------- */
+    let totalQty = 0;
+    let grossAmount = 0;
+    let totalDiscount = 0;
+    let taxableAmount = 0;
+    let totalCGST = 0;
+    let totalSGST = 0;
+    let totalIGST = 0;
+
+    items.forEach((item) => {
+      totalQty += item.qty || 0;
+      grossAmount += (item.mrp || 0) * (item.qty || 0);
+      totalDiscount += item.discountAmount || 0;
+      taxableAmount += item.taxableAmount || 0;
+      totalCGST += item.cgst || 0;
+      totalSGST += item.sgst || 0;
+      totalIGST += item.igst || 0;
+    });
+
+    const netAmount =
+      taxableAmount + totalCGST + totalSGST + totalIGST + (roundOff || 0);
+
+    const balanceAmount = netAmount - (paidAmount || 0);
+
+    const status =
+      balanceAmount === 0
+        ? "Paid"
+        : paidAmount > 0
+        ? "Partial"
+        : "Unpaid";
+
+    /* ---------- UPDATE ---------- */
+    bill.customerId = customerId;
+    bill.agentId = agentId;
+    bill.billNo = billNo;
+    bill.billDate = billDate;
+    bill.items = items;
+
+    bill.totalQty = totalQty;
+    bill.grossAmount = grossAmount;
+    bill.totalDiscount = totalDiscount;
+    bill.taxableAmount = taxableAmount;
+    bill.totalCGST = totalCGST;
+    bill.totalSGST = totalSGST;
+    bill.totalIGST = totalIGST;
+    bill.roundOff = roundOff;
+    bill.netAmount = netAmount;
+
+    bill.paymentMode = paymentMode;
+    bill.paidAmount = paidAmount;
+    bill.balanceAmount = balanceAmount;
+    bill.status = status;
+
+    bill.notes = notes;
 
     await bill.save();
 
-    res.status(200).json({
-      success: true,
-      message: "Bill returned successfully",
-      bill,
-    });
-
+    res.json({ success: true, bill });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: error.message,
-    });
+    res.status(500).json({ message: error.message });
   }
 };
 
 
-// UPDATE PAYMENT STATUS
-export const updatePaymentStatus = async (req, res) => {
+export const deleteBill = async (req, res) => {
   try {
-    const { paymentStatus } = req.body;
+    const { id } = req.params;
 
-    if (!paymentStatus) {
-      return res.status(400).json({
-        success: false,
-        message: "Payment status is required",
-      });
+    const bill = await Bill.findById(id);
+    if (!bill) {
+      return res.status(404).json({ message: "Bill not found" });
     }
 
-    const updatedBill = await Bill.findByIdAndUpdate(
-      req.params.id,
-      { paymentStatus },
-      { new: true }
-    );
+    await bill.deleteOne();
 
-    if (!updatedBill) {
+    res.json({ success: true, message: "Bill deleted successfully" });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+/* ========== GENERATE BILL BY CUSTOMER ID (WITH NAME) ========== */
+export const generateBillByCustomer = async (req, res) => {
+  try {
+    const { customerId } = req.params;
+
+    if (!customerId || !mongoose.Types.ObjectId.isValid(customerId)) {
+      return res.status(400).json({ message: "Invalid customer ID" });
+    }
+
+    const bill = await Bill.findOne({ customerId })
+      .sort({ createdAt: -1 }) // latest bill
+      .populate(
+        "customerId",
+        "firstName lastName phoneNumber email gstNumber address"
+      )
+      .populate("agentId", "firstName lastName")
+      .populate("items.productId", "productName itemCode brandName hsnCode");
+
+    if (!bill) {
       return res.status(404).json({
-        success: false,
-        message: "Bill not found",
+        message: "No bill found for this customer",
       });
     }
+
+    /* 🔹 customer name handling */
+    const customer = bill.customerId;
+
+    const customerDetails = {
+      firstName: customer?.firstName || "",
+      lastName: customer?.lastName || "",
+      fullName: `${customer?.firstName || ""} ${customer?.lastName || ""}`.trim(),
+      phoneNumber: customer?.phoneNumber || "",
+      email: customer?.email || "",
+      gstNumber: customer?.gstNumber || "",
+      address: customer?.address || "",
+    };
 
     res.status(200).json({
       success: true,
-      message: "Payment status updated successfully",
-      bill: updatedBill,
+      generatedFrom: "customerId",
+      billId: bill._id,
+      billNo: bill.billNo,
+      billDate: bill.billDate,
+      customer: customerDetails,
+      items: bill.items,
+      totals: {
+        totalQty: bill.totalQty,
+        grossAmount: bill.grossAmount,
+        totalDiscount: bill.totalDiscount,
+        taxableAmount: bill.taxableAmount,
+        totalCGST: bill.totalCGST,
+        totalSGST: bill.totalSGST,
+        totalIGST: bill.totalIGST,
+        roundOff: bill.roundOff,
+        netAmount: bill.netAmount,
+        paidAmount: bill.paidAmount,
+        balanceAmount: bill.balanceAmount,
+        status: bill.status,
+      },
+      notes: bill.notes,
     });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: error.message,
-    });
+    res.status(500).json({ message: error.message });
   }
 };
