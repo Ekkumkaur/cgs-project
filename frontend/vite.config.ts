@@ -20,10 +20,20 @@ export default defineConfig(({ mode }) => ({
       "@": path.resolve(__dirname, "./src"),
     },
   },
-
+  
   build: {
-    outDir: "dist",       // ✅ build output
-    emptyOutDir: true,    // ✅ clean old build
-    assetsDir: "assets",  // ✅ assets folder
-  },
+    outDir: "dist",
+    emptyOutDir: true,
+    assetsDir: "assets",
+
+    sourcemap: false,        // 🚫 saves a LOT of memory
+    cssCodeSplit: false,     // 🚫 fewer chunks = less RAM
+    minify: "esbuild",       // ✅ lighter than terser
+
+    rollupOptions: {
+      output: {
+        manualChunks: undefined, // 🚫 disable chunk splitting
+      },
+    },
+  }
 }));
