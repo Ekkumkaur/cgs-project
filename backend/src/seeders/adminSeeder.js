@@ -1,7 +1,6 @@
 import dotenv from "dotenv";
-import bcrypt from "bcryptjs";
 import { connectDB, disconnectDB } from "../config/db.js";
-import User from "../models/user.js";
+import Admin from "../models/admin.js";
 
 dotenv.config();
 
@@ -13,30 +12,26 @@ const seedAdmin = async () => {
     const adminPassword = process.env.ADMIN_PASSWORD || "Admin@123";
     const adminPhone = process.env.ADMIN_PHONE || "9876543210";
 
-    const existingAdmin = await User.findOne({ email: adminEmail, role: "admin" });
+    const existingAdmin = await Admin.findOne({ email: adminEmail });
     if (existingAdmin) {
-      console.log("Admin user already exists:", existingAdmin.email);
+      console.log("Admin already exists");
       return;
     }
 
-    const admin = await User.create({
+    const admin = await Admin.create({
       firstName: "Super",
       lastName: "Admin",
       email: adminEmail,
       phoneNumber: adminPhone,
       password: adminPassword,
       role: "admin",
-      isPhoneVerified: true,
-      isEmailVerified: true,
-      isNewUser: false,
-      lastLogin: new Date(),
     });
 
-    console.log("✅ Admin user created successfully!");
+    console.log("✅ Admin seeded successfully");
     console.log("Email:", admin.email);
     console.log("Password:", adminPassword);
-  } catch (error) {
-    console.error("❌ Error seeding admin:", error);
+  } catch (err) {
+    console.error(err);
   } finally {
     await disconnectDB();
   }

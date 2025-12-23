@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import bcrypt from "bcryptjs";
 
 const adminSchema = new mongoose.Schema(
   {
@@ -10,6 +11,11 @@ const adminSchema = new mongoose.Schema(
       required: true,
       unique: true,
       lowercase: true,
+    },
+
+    phoneNumber: {
+      type: String,
+      unique: true,
     },
 
     password: {
@@ -27,9 +33,19 @@ const adminSchema = new mongoose.Schema(
       default: false,
     },
 
+    otp: { type: Number, default: null },
+    otpExpiresAt: { type: Date, default: null },
+
     lastLogin: Date,
   },
   { timestamps: true }
 );
+
+adminSchema.pre("save", async function (next) {
+  if (!this.isModified("password")) return next();
+
+  this.password = await bcrypt.hash(this.password, 10);
+  next();
+});
 
 export default mongoose.model("Admin", adminSchema);

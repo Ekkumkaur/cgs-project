@@ -14,7 +14,7 @@ const userSchema = new mongoose.Schema(
     otpExpiresAt: { type: Date, default: null },
     resetPasswordToken: { type: String, default: null },
     resetPasswordExpiresAt: { type: Date, default: null },
-    role: { type: String, enum: ["customer", "admin"], default: "customer" },
+    role: { type: String, enum: ["customer"], default: "customer" },
     isPhoneVerified: { type: Boolean, default: false },
     isEmailVerified: { type: Boolean, default: false },
     isNewUser: { type: Boolean, default: true },

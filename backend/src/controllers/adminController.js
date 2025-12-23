@@ -1,125 +1,109 @@
 import Admin from "../models/admin.js";
 import bcrypt from "bcryptjs";
+import responseHandler from "../utils/responseHandler.js";
 import jwt from "jsonwebtoken";
 
+const generateOtp = () => Number(process.env.OTP || 1234);
+/**
+ * Generates and saves an OTP for an admin.
+ * @param {object} admin - The Mongoose admin document.
+ * @returns {number} The generated OTP.
+ */
+const generateAndSaveAdminOtp = async (admin) => {
+  const otp = parseInt(process.env.OTP || 1234); // Using a static OTP from env for now
+  const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5-minute expiry
+
+  admin.otp = otp;
+  admin.otpExpiresAt = expiresAt;
+  await admin.save();
+
+  console.log(`OTP for admin ${admin.email}: ${otp}`);
+  return otp;
+};
+
+console.log("🔥 ADMIN LOGIN API HIT 🔥");
 export const adminLogin = async (req, res) => {
   try {
     const { email, password } = req.body;
-
-    // validation
     if (!email || !password) {
-      return res.status(400).json({
-        success: false,
-        message: "Email and password are required",
-      });
+      return res
+        .status(400)
+        .json(responseHandler.error("Email and password are required"));
     }
 
-    // find admin
     const admin = await Admin.findOne({ email });
 
     if (!admin) {
-      return res.status(404).json({
-        success: false,
-        message: "Admin not found",
-      });
+      return res.status(404).json(responseHandler.error("Admin not found"));
     }
 
     if (admin.isBlocked) {
-      return res.status(403).json({
-        success: false,
-        message: "Admin is blocked",
-      });
+      return res.status(403).json(responseHandler.error("Your account is blocked. Please contact support."));
     }
 
-    // compare password
     const isMatch = await bcrypt.compare(password, admin.password);
-
     if (!isMatch) {
-      return res.status(401).json({
-        success: false,
-        message: "Invalid credentials",
-      });
+      return res.status(401).json(responseHandler.error("Invalid credentials"));
     }
 
-    // token
+    const otp = await generateAndSaveAdminOtp(admin);
+
+    return res.json(
+      responseHandler.success({ otp }, "OTP sent successfully")
+    );
+  } catch (err) {
+    return res.status(500).json(responseHandler.error(err.message));
+  }
+};
+
+export const verifyAdminOtp = async (req, res) => {
+  try {
+    const { phoneNumber, otp } = req.body;
+
+    if (!phoneNumber || !otp) {
+      return res
+        .status(400)
+        .json(responseHandler.error("Phone number and OTP are required"));
+    }
+
+    const admin = await Admin.findOne({
+      phoneNumber,
+      otp: Number(otp),
+      otpExpiresAt: { $gt: new Date() },
+    });
+
+    if (!admin) {
+      return res.status(400).json(responseHandler.error("Invalid OTP"));
+    }
+
+    admin.otp = null;
+    admin.otpExpiresAt = null;
+    admin.lastLogin = new Date();
+    await admin.save();
+
     const token = jwt.sign(
-      { id: admin._id, role: admin.role },
+      { id: admin._id, role: "admin" },
       process.env.JWT_SECRET,
       { expiresIn: "1d" }
     );
 
-    admin.lastLogin = new Date();
-    await admin.save();
-
-    res.status(200).json({
-      success: true,
-      message: "Admin login successful",
-      token,
-      admin: {
-        id: admin._id,
-        email: admin.email,
-        role: admin.role,
-      },
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: error.message,
-    });
+    return res.json(
+      responseHandler.success(
+        {
+          user: {
+            _id: admin._id,
+            firstName: admin.firstName,
+            lastName: admin.lastName,
+            email: admin.email,
+            phoneNumber: admin.phoneNumber,
+            role: admin.role,
+          },
+          token,
+        },
+        "Admin login successful"
+      )
+    );
+  } catch (err) {
+    return res.status(500).json(responseHandler.error(err.message));
   }
 };
-
-/**
- * ADD ADMIN
- */
-export const addAdmin = async (req, res) => {
-  try {
-    const { firstName, lastName, email, password } = req.body;
-
-    // validation
-    if (!email || !password) {
-      return res.status(400).json({
-        success: false,
-        message: "Email and password are required",
-      });
-    }
-
-    // check existing admin
-    const existingAdmin = await Admin.findOne({ email });
-    if (existingAdmin) {
-      return res.status(409).json({
-        success: false,
-        message: "Admin already exists",
-      });
-    }
-
-    // hash password
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
-
-    // create admin
-    const admin = await Admin.create({
-      firstName,
-      lastName,
-      email,
-      password: hashedPassword,
-      role: "admin",
-    });
-
-    res.status(201).json({
-      success: true,
-      message: "Admin created successfully",
-      admin: {
-        id: admin._id,
-        email: admin.email,
-        role: admin.role,
-      },
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: error.message,
-    });
-  }
-};
-
