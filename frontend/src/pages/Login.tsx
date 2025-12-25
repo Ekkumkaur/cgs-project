@@ -21,7 +21,7 @@ export default function Login() {
     setLoading(true);
 
     try {
-      const response = await adminInstance.post("/auth/login/admin", {
+      const response = await adminInstance.post("/admin/login", {
         email,
         password,
       });

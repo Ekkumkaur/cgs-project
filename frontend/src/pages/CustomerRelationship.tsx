@@ -97,7 +97,7 @@ export default function CustomerRelationship() {
         const reversedCustomers = response.data.data.customers.reverse();
         const formattedCustomers = reversedCustomers.map((customer, index) => ({
           id: customer._id,
-          sno: `CGS${String(index + 1).padStart(3, "0")}`,
+          sno: `CUST${String(index + 1).padStart(3, "0")}`,
           name:
             customer.firstName || customer.lastName
               ? `${customer.firstName} ${customer.lastName}`.trim()
@@ -135,7 +135,7 @@ export default function CustomerRelationship() {
         const reversedCustomers = [...customersData].reverse();
         const formattedCustomers = reversedCustomers.map((customer, index) => ({
           id: customer._id,
-          sno: `CGS${String(index + 1).padStart(3, "0")}`,
+          sno: `CUST${String(index + 1).padStart(3, "0")}`,
           name:
             customer.firstName || customer.lastName
               ? `${customer.firstName} ${customer.lastName}`.trim()
@@ -178,7 +178,7 @@ export default function CustomerRelationship() {
         const reversedCustomers = [...customersData].reverse();
         const formattedCustomers = reversedCustomers.map((customer, index) => ({
           id: customer._id,
-          sno: `CGS${String(index + 1).padStart(3, "0")}`,
+          sno: `CUST${String(index + 1).padStart(3, "0")}`,
           name:
             customer.firstName || customer.lastName
               ? `${customer.firstName} ${customer.lastName}`.trim()

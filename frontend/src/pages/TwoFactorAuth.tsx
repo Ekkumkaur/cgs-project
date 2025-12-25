@@ -55,7 +55,7 @@ export default function TwoFactorAuth() {
       // This is crucial for the API call to be authorized
       const tempToken = sessionStorage.getItem("tempToken");
 
-      const response = await adminInstance.post("/auth/otp/verify", {
+      const response = await adminInstance.post("/admin/otp/verify", {
         phoneNumber: mobileNumber,
         otp: Number(otp),
       }, {

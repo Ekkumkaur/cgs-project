@@ -5,7 +5,8 @@ export const addCustomer = (data: any) =>
   adminInstance.post("/customers", data);
 
 // Get all customers
-export const getCustomers = () => adminInstance.get("/customers");
+export const getAllCustomers = () => adminInstance.get("/customers");
+export const getCustomers = getAllCustomers;
 
 // Filter customers by rating
 export const getCustomersByRating = (rating: number) =>

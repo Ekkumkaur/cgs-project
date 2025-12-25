@@ -44,6 +44,17 @@ export const generateBill = async (customerId: string) => {
   }
 };
 
+// get bill drafts
+export const getBillDrafts = async () => {
+  try {
+    const response = await adminInstance.get("/bills/drafts");
+    return response.data;
+  } catch (error) {
+    console.error("Error getting bill drafts:", error);
+    throw error;
+  }
+};
+
 // delete a bill by id
 export const deleteBill = async (id: string) => {
   try {

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { AdminLayout } from "@/components/AdminLayout";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Search, Calendar, Pencil, Eye, Undo2 } from "lucide-react";
+import { Search, Calendar, Pencil, Eye, Undo2, Trash2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
@@ -30,13 +30,13 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { toast } from "sonner";
-import { getAllPurchaseReturns, updatePurchaseReturn } from "@/adminApi/returnPurchaseApi";
-
+import { getAllPurchaseReturns, updatePurchaseReturn, deletePurchaseReturn } from "@/adminApi/purchaseReturnApi";
 export default function ReturnPurchase() {
   const [search, setSearch] = useState("");
   const [returns, setReturns] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [editingReturn, setEditingReturn] = useState(null);
   const [formLoading, setFormLoading] = useState(false);
   const [formState, setFormState] = useState({
@@ -63,12 +63,29 @@ export default function ReturnPurchase() {
     return savedOrder ? JSON.parse(savedOrder) : initialColumns;
   });
 
+  useEffect(() => {
+    localStorage.setItem("returnPurchaseColumnOrder", JSON.stringify(columns));
+  }, [columns]);
+
   const fetchReturns = useCallback(async () => {
     setLoading(true);
     try {
       const response = await getAllPurchaseReturns();
       if (response.success) {
-        setReturns(response.data || []);
+        const returnsData = response.data || [];
+        const flattenedReturns = returnsData.flatMap((ret: any) => {
+          if (ret.items && ret.items.length > 0) {
+            return ret.items.map((item: any) => ({
+              ...ret, // Copy top-level return properties
+              _id: `${ret._id}-${item._id}`, // Create a unique key for React
+              product: item.product,
+              qty: item.qty || 0,
+              amount: item.amount ?? ((item.qty || 0) * (item.rate || 0)),
+            }));
+          }
+          return [{ ...ret, _id: ret._id, product: null, qty: 0, amount: ret.totalAmount }];
+        });
+        setReturns(flattenedReturns);
       } else {
         toast.error(response.message || "Failed to fetch purchase returns.");
       }
@@ -79,10 +96,6 @@ export default function ReturnPurchase() {
       setLoading(false);
     }
   }, []);
-
-  useEffect(() => {
-    localStorage.setItem("returnPurchaseColumnOrder", JSON.stringify(columns));
-  }, [columns]);
 
   useEffect(() => {
     fetchReturns();
@@ -109,6 +122,8 @@ export default function ReturnPurchase() {
     );
   };
 
+  // STEP 2: Pencil icon par click karne par ye function call hota hai.
+  // Ye modal open karta hai aur edit karne wale item ka data set karta hai.
   const handleEditClick = (item) => {
     setEditingReturn(item);
     setFormState({
@@ -120,6 +135,11 @@ export default function ReturnPurchase() {
     setIsEditModalOpen(true);
   };
 
+  const handleViewClick = (item) => {
+    setEditingReturn(item); // Use the same state as edit for simplicity
+    setIsViewModalOpen(true);
+  };
+
   const handleFormInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormState((prev) => ({ ...prev, [name]: value }));
@@ -129,6 +149,8 @@ export default function ReturnPurchase() {
     setFormState((prev) => ({ ...prev, [name]: value }));
   };
 
+  // STEP 4: Modal ke andar "Update Return" button par click karne par ye function call hota hai.
+  // Ye data taiyar karke updatePurchaseReturn API ko call karta hai.
   const handleUpdateSubmit = async () => {
     if (!formState.qty || !formState.reason || !formState.amount) {
       toast.error("Please fill all fields: Quantity, Reason, and Amount.");
@@ -141,17 +163,32 @@ export default function ReturnPurchase() {
 
     setFormLoading(true);
     try {
+      // Backend ko 'purchase', 'date', aur 'items' ki zaroorat hai.
+      // Hum validation pass karne ke liye payload ko sahi se banayenge.
       const payload = {
-        ...formState,
-        qty: Number(formState.qty),
-        amount: Number(formState.amount),
+        purchase: editingReturn.purchase?._id || editingReturn.purchase,
+        date: editingReturn.date, // Original date ko background mein pass karein
+        reason: formState.reason,
+        status: formState.status,
+        items: [
+          {
+            product: editingReturn.product?._id,
+            qty: Number(formState.qty),
+            // Rate ko amount aur quantity se calculate karein
+            rate: Number(formState.qty) > 0 ? Number(formState.amount) / Number(formState.qty) : 0,
+          },
+        ],
       };
 
-      const response = await updatePurchaseReturn(editingReturn._id, payload);
+      // Original return ka _id chahiye, flattened wala nahi.
+      const originalReturnId = editingReturn._id.split('-')[0];
+
+      // STEP 5: Yahan API call hota hai updated data ke saath.
+      const response = await updatePurchaseReturn(originalReturnId, payload);
 
       if (response.success) {
         toast.success("Purchase return updated successfully!");
-        fetchReturns();
+        fetchReturns(); // List ko refresh karein
         setIsEditModalOpen(false);
         setEditingReturn(null);
       } else {
@@ -159,16 +196,35 @@ export default function ReturnPurchase() {
       }
     } catch (error) {
       toast.error("An error occurred while updating.");
-      console.error(error);
     } finally {
       setFormLoading(false);
+    }
+  };
+
+  const handleDeleteReturn = async (returnId: string) => {
+    if (!window.confirm("Are you sure you want to delete this purchase return?")) {
+      return;
+    }
+
+    try {
+      const originalReturnId = returnId.split('-')[0];
+      const response = await deletePurchaseReturn(originalReturnId);
+
+      if (response.success) {
+        toast.success("Purchase return deleted successfully!");
+        fetchReturns(); // Refresh the list
+      } else {
+        toast.error(response.message || "Failed to delete purchase return.");
+      }
+    } catch (error) {
+      toast.error("An error occurred while deleting.");
     }
   };
 
   const filteredReturns = returns.filter(
     (item) => {
       const lowercasedSearch = search.toLowerCase();
-      if (!lowercasedSearch) return true; // If search is empty, show all
+      if (!lowercasedSearch) return true; // Agar search khali hai, to sab dikhayein
 
       const returnIdMatch = item.returnId && item.returnId.toLowerCase().includes(lowercasedSearch);
       const supplierNameMatch = item.supplier && item.supplier.name && item.supplier.name.toLowerCase().includes(lowercasedSearch);
@@ -223,7 +279,7 @@ export default function ReturnPurchase() {
                 const renderCell = (item: any, columnId: string) => {
                   switch (columnId) {
                     case "returnId": return <td className="px-4 py-3">{item.returnId}</td>;
-                    case "purchaseId": return <td className="px-4 py-3">{item.purchase?.purchaseId || item.purchaseId || 'N/A'}</td>;
+                    case "purchaseId": return <td className="px-4 py-3">{item.purchase?.purchaseId || 'N/A'}</td>;
                     case "supplier": return <td className="px-4 py-3">{item.supplier?.name || 'N/A'}</td>;
                     case "product": return <td className="px-4 py-3">{item.product?.name || item.product?.productName || 'N/A'}</td>;
                     case "qty": return <td className="px-4 py-3">{item.qty}</td>;
@@ -233,12 +289,13 @@ export default function ReturnPurchase() {
                     case "actions":
                       return (
                         <td className="py-3 px-4 flex items-center justify-center gap-2">
-                          <button className="w-8 h-8 flex items-center justify-center border border-blue-500 text-blue-500 rounded-full hover:bg-blue-50 transition-colors" title="View Details">
+                          <button onClick={() => handleViewClick(item)} className="w-8 h-8 flex items-center justify-center border border-blue-500 text-blue-500 rounded-full hover:bg-blue-50 transition-colors" title="View Details">
                             <Eye size={16} />
                           </button>
-                          <button className="w-8 h-8 flex items-center justify-center border border-orange-500 text-orange-500 rounded-full hover:bg-orange-50 transition-colors" title="Process Return">
-                            <Undo2 size={16} />
+                          <button onClick={() => handleDeleteReturn(item._id)} className="w-8 h-8 flex items-center justify-center border border-red-400 text-red-500 rounded-full hover:bg-red-50 transition-colors" title="Delete Return">
+                            <Trash2 size={16} />
                           </button>
+                          {/* STEP 1: User yahan pencil icon par click karta hai. */}
                           <button onClick={() => handleEditClick(item)} className="w-8 h-8 flex items-center justify-center border border-gray-400 text-gray-600 rounded-full hover:bg-gray-100 transition-colors" title="Edit Return">
                             <Pencil size={16} />
                           </button>
@@ -333,6 +390,7 @@ export default function ReturnPurchase() {
                   </SelectContent>
                 </Select>
               </div>
+              {/* STEP 3: User modal ke andar is button par click karke changes submit karta hai. */}
               <Button
                 onClick={handleUpdateSubmit}
                 disabled={formLoading}
@@ -342,6 +400,59 @@ export default function ReturnPurchase() {
               </Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* View Return Modal */}
+      <Dialog open={isViewModalOpen} onOpenChange={setIsViewModalOpen}>
+        <DialogContent className="max-w-lg w-full">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold text-gray-800">Purchase Return Details</DialogTitle>
+          </DialogHeader>
+          {editingReturn && (
+            <div className="py-4 space-y-6">
+              <div className="flex justify-between items-center bg-gray-50 p-4 rounded-lg">
+                <div>
+                  <p className="text-sm text-gray-500">Return ID</p>
+                  <p className="font-bold text-lg text-[#e48a7c]">{editingReturn.returnId}</p>
+                </div>
+                <div className={`px-4 py-1.5 rounded-full text-sm font-bold ${
+                  editingReturn.status === 'COMPLETED' ? 'bg-green-100 text-green-800' : 
+                  editingReturn.status === 'REJECTED' ? 'bg-red-100 text-red-800' : 
+                  'bg-orange-100 text-orange-800'
+                }`}>
+                  {editingReturn.status}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div className="space-y-1">
+                  <p className="text-gray-500">Purchase ID</p>
+                  <p className="font-semibold">{editingReturn.purchase?.purchaseId}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-gray-500">Supplier</p>
+                  <p className="font-semibold">{editingReturn.supplier?.name}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-gray-500">Product</p>
+                  <p className="font-semibold">{editingReturn.product?.productName}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-gray-500">Quantity</p>
+                  <p className="font-semibold">{editingReturn.qty}</p>
+                </div>
+                <div className="space-y-1 col-span-2">
+                  <p className="text-gray-500">Reason</p>
+                  <p className="font-semibold">{editingReturn.reason}</p>
+                </div>
+                <div className="space-y-1 col-span-2 border-t pt-4 mt-2">
+                  <p className="text-gray-500">Total Amount</p>
+                  <p className="font-bold text-xl text-gray-800">₹{editingReturn.amount?.toLocaleString('en-IN') || 0}</p>
+                </div>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </AdminLayout>

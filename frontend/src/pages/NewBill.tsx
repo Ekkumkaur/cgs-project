@@ -10,12 +10,26 @@ import {
   CommandItem,
 } from "@/components/ui/command";
 import { Input } from "@/components/ui/input";
-import { Dialog, DialogContent, DialogHeader } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Search, Edit, Trash2, Barcode } from "lucide-react";
 import React, { useState, useEffect } from "react"; // React is imported here
 import { useNavigate, useSearchParams, useLocation } from "react-router-dom";
@@ -28,10 +42,9 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 
-import { addNewBill, getBillsByCustomerId, generateBill } from '@/adminApi/billApi'; // Assuming the api is in billApi
+import { addNewBill, getBillsByCustomerId, generateBill, updateBillPaymentStatus } from '@/adminApi/billApi'; // Assuming the api is in billApi
 import { getAllProducts } from "@/adminApi/productApi";
 import { toast } from "sonner";
-import { DialogTitle } from "@radix-ui/react-dialog";
 
 const updateBill = async ({ id, data }: { id: string; data: any }) => {
   return await adminInstance.put(`/bills/update/${id}`, data);
@@ -57,9 +70,11 @@ export default function NewBill() {
   const [rows, setRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [newBillItems, setNewBillItems] = useState<any[]>([]);
-  const [generatedBillUrl, setGeneratedBillUrl] = useState<string | null>(null);
+  const [generatedBillHtml, setGeneratedBillHtml] = useState<string | null>(null);
   const [showGeneratedBill, setShowGeneratedBill] = useState(false);
   const [editingBillId, setEditingBillId] = useState<string | null>(null);
+  const [statusConfirmationOpen, setStatusConfirmationOpen] = useState(false);
+  const [pendingStatusUpdate, setPendingStatusUpdate] = useState<{ billId: string; status: string } | null>(null);
 
   const initialColumns = [
     { id: "sno", label: "SNO." },
@@ -75,11 +90,12 @@ export default function NewBill() {
     { id: "cd", label: "C.D" },
     { id: "netAmount", label: "NET AMOUNT" },
     { id: "tax", label: "TAX" },
+    { id: "paymentStatus", label: "PAYMENT STATUS" },
     { id: "actions", label: "ACTIONS" },
   ];
 
   const [columns, setColumns] = useState(() => {
-    const savedOrder = localStorage.getItem("billDetailsTableColumnOrder");
+    const savedOrder = localStorage.getItem("billDetailsTableColumnOrder_v2");
     return savedOrder ? JSON.parse(savedOrder) : initialColumns;
   });
 
@@ -103,13 +119,11 @@ export default function NewBill() {
     };
     fetchProducts();
     // If we are creating a new bill, open the modal and prepare an empty row.
-    if (location.state?.openAddProductModal) {
-      if (location.state.customerName && location.state.customerCode) {
-        setCustomerInfo({
-          name: location.state.customerName,
-          code: location.state.customerCode,
-        });
-      }
+    if (location.state?.customerName) {
+      setCustomerInfo({
+        name: location.state.customerName,
+        code: location.state.customerCode || "",
+      });
     }
 
     // If there's no customerId, don't attempt to fetch.
@@ -128,7 +142,10 @@ export default function NewBill() {
         setLoading(true);
         // Clear previous data to prevent showing stale bills from another customer
         setRows([]);
-        setCustomerInfo({ name: "", code: "" });
+        setCustomerInfo({ 
+          name: location.state?.customerName || "", 
+          code: location.state?.customerCode || "" 
+        });
 
         const response = await getBillsByCustomerId(customerId);
         // The API returns an array of bills for a customer, we'll take the first one.
@@ -189,7 +206,7 @@ export default function NewBill() {
   }, [customerId, location.state]);
   useEffect(() => {
     localStorage.setItem(
-      "billDetailsTableColumnOrder",
+      "billDetailsTableColumnOrder_v2",
       JSON.stringify(columns)
     );
   }, [columns]);
@@ -292,6 +309,7 @@ export default function NewBill() {
         toast.success("Bill saved successfully!");
       }
       setOpenAddProductModal(false);
+      setOpenPreview(false);
       setEditingBillId(null);
       navigate(0); // Refresh the page to show updated data
     } catch (error: any) {
@@ -325,12 +343,22 @@ export default function NewBill() {
     }
     try {
       const response = await generateBill(customerId);
-      // Assuming the API returns a URL to the generated PDF
-      const billUrl = response.url || response.data?.url;
+      // The API returns a base64 data URL in the 'url' field
+      const billDataUrl = response.url;
 
-      if (response.success && billUrl) {
+      if (response.success && billDataUrl) {
         toast.success("Bill generated successfully!");
-        setGeneratedBillUrl(billUrl);
+
+        // Decode base64 to HTML string for srcDoc (allows printing)
+        const base64Part = billDataUrl.split(',')[1];
+        const binaryString = window.atob(base64Part);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+        const decodedHtml = new TextDecoder().decode(bytes);
+
+        setGeneratedBillHtml(decodedHtml);
         setShowGeneratedBill(true);
       } else {
         toast.error(response.message || "Bill generated but no viewable file was returned.");
@@ -464,6 +492,34 @@ export default function NewBill() {
     ]);
   };
 
+  const initiatePaymentStatusChange = (billId: string, status: string) => {
+    setPendingStatusUpdate({ billId, status });
+    setStatusConfirmationOpen(true);
+  };
+
+  const confirmPaymentStatusChange = async () => {
+    if (!pendingStatusUpdate) return;
+    const { billId, status } = pendingStatusUpdate;
+
+    try {
+      await updateBillPaymentStatus(billId, status);
+      toast.success("Payment status updated");
+      if (status === 'Draft') {
+        navigate('/bills/drafts');
+      } else {
+        setRows((prevRows) =>
+          prevRows.map((row) => (row.billId === billId ? { ...row, paymentStatus: status } : row))
+        );
+      }
+    } catch (error) {
+      console.error("Failed to update status", error);
+      toast.error("Failed to update status");
+    } finally {
+      setStatusConfirmationOpen(false);
+      setPendingStatusUpdate(null);
+    }
+  };
+
   return (
     <AdminLayout title={`Bill Listing > ${customerInfo.name || 'Customer'}`}>
       <div className="p-4 sm:p-6 bg-white min-h-screen text-[#3E3E3E] flex flex-col justify-between overflow-hidden relative">
@@ -549,6 +605,25 @@ export default function NewBill() {
                       return <td className="py-3 px-4">{row.netAmount}</td>;
                     case "tax":
                       return <td className="py-3 px-4">{row.tax}</td>;
+                    case "paymentStatus":
+                      return (
+                        <td className="py-3 px-4">
+                          <Select
+                            value={row.paymentStatus}
+                            onValueChange={(value) => initiatePaymentStatusChange(row.billId, value)}
+                          >
+                            <SelectTrigger className="w-[110px] h-8 text-xs bg-white border-gray-300">
+                              <SelectValue placeholder="Status" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="Paid">Paid</SelectItem>
+                              {/* <SelectItem value="Pending">Pending</SelectItem> */}
+                              <SelectItem value="Unpaid">Unpaid</SelectItem>
+                              <SelectItem value="Draft">Draft</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </td>
+                      );
                     case "actions":
                       return (
                         <td className="py-3 px-4 text-center">
@@ -656,8 +731,8 @@ export default function NewBill() {
               Print
             </Button>
           </DialogHeader>
-          {generatedBillUrl && (
-            <iframe id="bill-iframe" src={generatedBillUrl} className="w-full h-full border-0" title="Generated Bill Preview"></iframe>
+          {generatedBillHtml && (
+            <iframe id="bill-iframe" srcDoc={generatedBillHtml} className="w-full h-full border-0" title="Generated Bill Preview"></iframe>
           )}
         </DialogContent>
       </Dialog>
@@ -969,10 +1044,13 @@ export default function NewBill() {
 
             <div className="flex justify-center mt-8">
               <Button
-                onClick={handleSaveBill}
+                onClick={() => {
+                  toast.success("Bill saved successfully!");
+                  setOpenPreview(false);
+                }}
                 className="bg-[#E98C81] hover:bg-[#df7c72] text-white rounded-full px-10 py-3 font-medium shadow-md"
               >
-                Save & Print
+                Save
               </Button>
             </div>
           </div>
@@ -1080,6 +1158,22 @@ export default function NewBill() {
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* === Payment Status Confirmation Dialog === */}
+      <Dialog open={statusConfirmationOpen} onOpenChange={setStatusConfirmationOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Confirm Status Change</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to change the payment status to <strong>{pendingStatusUpdate?.status}</strong>?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setStatusConfirmationOpen(false)}>Cancel</Button>
+            <Button onClick={confirmPaymentStatusChange} className="bg-[#E98C81] hover:bg-[#d37b70] text-white">Confirm</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </AdminLayout>

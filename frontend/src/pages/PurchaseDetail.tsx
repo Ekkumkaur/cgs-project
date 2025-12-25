@@ -31,6 +31,7 @@ import {
   updatePurchaseDetail,
 } from "@/adminApi/purchaseDetailApi";
 import { getAllSuppliers } from "@/adminApi/supplierApi";
+import { addPurchaseReturn } from "@/adminApi/purchaseReturnApi";
 import { format } from "date-fns";
 
 export default function PurchaseDetail() {
@@ -42,7 +43,10 @@ export default function PurchaseDetail() {
   const [formLoading, setFormLoading] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
   const [selectedPurchase, setSelectedPurchase] = useState(null);
+  const [showReturnModal, setShowReturnModal] = useState(false);
+  const [returnLoading, setReturnLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [returnReason, setReturnReason] = useState("");
   const [newPurchase, setNewPurchase] = useState({
     supplier: "",
     date: "",
@@ -131,6 +135,44 @@ export default function PurchaseDetail() {
   const handleViewClick = (purchase) => {
     setSelectedPurchase(purchase);
     setShowViewModal(true);
+  };
+
+  const handleReturnClick = (purchase) => {
+    setSelectedPurchase(purchase);
+    setReturnReason("");
+    setShowReturnModal(true);
+  };
+
+  const handleConfirmReturn = async () => {
+    if (!selectedPurchase) return;
+    setReturnLoading(true);
+
+    try {
+      const payload = {
+        purchase: selectedPurchase._id,
+        supplier: selectedPurchase.supplier?._id || selectedPurchase.supplier,
+        amount: selectedPurchase.totalAmount,
+        reason: returnReason,
+        date: new Date().toISOString(),
+        qty: selectedPurchase.items?.reduce((acc: number, item: any) => acc + (Number(item.qty) || 0), 0) || 0,
+        status: "PENDING",
+        items: selectedPurchase.items || []
+      };
+
+      const response = await addPurchaseReturn(payload);
+      if (response.success) {
+        toast.success("Purchase returned successfully!");
+        setShowReturnModal(false);
+        setSelectedPurchase(null);
+      } else {
+        toast.error(response.message || "Failed to return purchase.");
+      }
+    } catch (error) {
+      console.error("Return error:", error);
+      toast.error("An error occurred while returning the purchase.");
+    } finally {
+      setReturnLoading(false);
+    }
   };
 
   const resetForm = () => {
@@ -291,7 +333,7 @@ export default function PurchaseDetail() {
                     <button onClick={() => handleViewClick(item)} className="w-8 h-8 flex items-center justify-center border border-blue-500 text-blue-500 rounded-full hover:bg-blue-50 transition-colors" title="View Details">
                       <Eye size={16} />
                     </button>
-                    <button className="w-8 h-8 flex items-center justify-center border border-orange-500 text-orange-500 rounded-full hover:bg-orange-50 transition-colors" title="Return Purchase">
+                    <button onClick={() => handleReturnClick(item)} className="w-8 h-8 flex items-center justify-center border border-orange-500 text-orange-500 rounded-full hover:bg-orange-50 transition-colors" title="Return Purchase">
                       <Undo2 size={16} />
                     </button>
                     <button onClick={() => handleEditClick(item)} className="w-8 h-8 flex items-center justify-center border border-gray-400 text-gray-600 rounded-full hover:bg-gray-100 transition-colors" title="Edit Purchase">
@@ -470,11 +512,68 @@ export default function PurchaseDetail() {
                 <h3 className="font-semibold text-gray-700 mb-3">Items in this Purchase</h3>
                 <div className="bg-white p-4 rounded-lg shadow-sm">
                   {selectedPurchase.items && selectedPurchase.items.length > 0 ? (
-                    <p>Item list will be displayed here.</p> // Placeholder for item table
+                    <table className="w-full text-sm">
+                      <thead className="text-left text-gray-500">
+                        <tr>
+                          <th className="pb-2 font-normal">S.No.</th>
+                          <th className="pb-2 font-normal">Product Name</th>
+                          <th className="pb-2 font-normal text-center">Qty</th>
+                          <th className="pb-2 font-normal text-right">Rate</th>
+                          <th className="pb-2 font-normal text-right">Amount</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {selectedPurchase.items.map((item: any, index: number) => (
+                          <tr key={item._id || index} className="border-t">
+                            <td className="py-2">{index + 1}</td>
+                            <td className="py-2">{item.product?.productName || 'N/A'}</td>
+                            <td className="py-2 text-center">{item.qty}</td>
+                            <td className="py-2 text-right">₹{item.rate?.toLocaleString('en-IN')}</td>
+                            <td className="py-2 text-right">₹{item.amount?.toLocaleString('en-IN')}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   ) : (
                     <p className="text-gray-500 text-center py-4">No items were recorded for this purchase.</p>
                   )}
                 </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Return Purchase Modal */}
+      {showReturnModal && selectedPurchase && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
+          <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold">Return Purchase</h3>
+              <button onClick={() => { setShowReturnModal(false); setSelectedPurchase(null); }} className="text-gray-500 hover:text-gray-800">&times;</button>
+            </div>
+            <div className="space-y-4">
+              <p>Are you sure you want to process a return for this purchase?</p>
+              <p><strong>Purchase ID:</strong> {selectedPurchase.purchaseId}</p>
+              <p><strong>Supplier:</strong> {selectedPurchase.supplier?.name || selectedPurchase.supplierName}</p>
+              <p><strong>Amount:</strong> ₹{selectedPurchase.totalAmount?.toLocaleString('en-IN') || 0}</p>
+              <div>
+                <label className="text-sm font-medium text-gray-700 mb-1 block">Reason for Return</label>
+                <textarea
+                  className="w-full border border-gray-300 rounded-md p-2 text-sm focus:ring-2 focus:ring-[#e48a7c] focus:border-transparent outline-none resize-none"
+                  rows={3}
+                  placeholder="Enter reason for return..."
+                  value={returnReason}
+                  onChange={(e) => setReturnReason(e.target.value)}
+                />
+              </div>
+              <div className="flex justify-end gap-4 mt-4">
+                <Button variant="outline" onClick={() => { setShowReturnModal(false); setSelectedPurchase(null); }}>
+                  Cancel
+                </Button>
+                <Button className="bg-orange-500 hover:bg-orange-600 text-white" onClick={handleConfirmReturn} disabled={returnLoading}>
+                  {returnLoading ? "Processing..." : "Confirm Return"}
+                </Button>
               </div>
             </div>
           </div>

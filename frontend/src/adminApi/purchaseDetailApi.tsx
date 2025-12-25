@@ -33,16 +33,24 @@ export const updatePurchaseDetail = async (id: string, purchaseData: any) => {
   }
 };
 
-/**
- * Retrieves a purchase voucher.
- * The specific voucher is likely determined by parameters or session on the backend.
- */
-export const getPurchaseVoucher = async () => {
+// get purchase voucher
+export const getPurchaseVouchers = async () => {
   try {
-    const response = await adminInstance.get("/purchases/voucher");
+    const response = await adminInstance.get("/purchases/vouchers");
     return response.data;
   } catch (error) {
     console.error("Error fetching purchase voucher:", error);
+    throw error;
+  }
+};
+
+// add a purchase voucher
+export const addPurchaseVoucher = async (voucherData: any) => {
+  try {
+    const response = await adminInstance.post("/purchases/voucher", voucherData);
+    return response.data;
+  } catch (error) {
+    console.error("Error adding purchase voucher:", error);
     throw error;
   }
 };

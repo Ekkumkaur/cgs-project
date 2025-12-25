@@ -34,9 +34,13 @@ import adminRoutes from "./routes/adminRoutes.js";
 
 import purchaseRoutes from "./routes/purchaseRoutes.js";
 
-import purchaseReturnRoutes from "./routes/returnRoutes.js";
+import purchaseReturnRoutes from "./routes/purchaseReturnRoutes.js";
+
+import saleReturnRoutes from "./routes/saleReturnRoutes.js";
 
 import reportRoutes from "./routes/reportRoutes.js";
+
+import dashboardRoutes from "./routes/dashboardRoutes.js";
 
 dotenv.config();
 connectDB();
@@ -80,7 +84,10 @@ app.use("/api/suppliers", supplierRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/purchases", purchaseRoutes);
 app.use("/api/purchase-returns", purchaseReturnRoutes);
+app.use("/api/sale-returns", saleReturnRoutes);
 app.use("/api/reports", reportRoutes);
+app.use("/api/dashboard", dashboardRoutes);
+
 
 app.get("/", (_, res) => res.send("E-commerce backend running ✅"));
 

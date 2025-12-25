@@ -78,9 +78,9 @@ const billSchema = new mongoose.Schema(
     paidAmount: Number,
     balanceAmount: Number,
 
-    status: {
+    paymentStatus: {
       type: String,
-      enum: ["Paid", "Unpaid", "Partial"],
+      enum: ["Paid", "Unpaid", "Partial", "Draft"],
       default: "Unpaid",
     },
 

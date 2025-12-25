@@ -28,7 +28,8 @@ import {
   Hash,
   BadgeIndianRupee,
   Percent,
-  Plus,
+  Eye,
+  RotateCcw,
 } from "lucide-react";
 import { Toaster, toast } from "sonner";
 import {
@@ -57,8 +58,6 @@ import { Input } from "@/components/ui/input";
 import {
   getAllBills,
   deleteBillById,
-  updatePaymentStatus,
-  addBill,
 } from "@/adminApi/saleApi";
 import { Label } from "@/components/ui/label";
 import {
@@ -68,6 +67,8 @@ import {
   SelectTrigger,
 } from "@/components/ui/select";
 import { format } from "date-fns";
+import { updateBillPaymentStatus } from "@/adminApi/billApi";
+import { addSaleReturn } from "@/adminApi/saleReturnApi";
 
 const DraggableHeader = ({
   column,
@@ -109,12 +110,12 @@ export default function Sale() {
     { id: "billId", header: "BILL ID", size: "1.0fr" },
     { id: "date", header: "DATE", size: "1.3fr" },
     { id: "customerName", header: "CUSTOMER NAME", size: "2fr" },
-    { id: "discount", header: "DISCOUNT", size: "1fr" },
+    { id: "discount", header: "DISCOUNT %", size: "1fr" },
     { id: "sgst", header: "SGST", size: "1fr" },
     { id: "totalAmount", header: "TOTAL AMOUNT", size: "1.6fr" },
     { id: "cgst", header: "CGST", size: "1fr" },
     { id: "amountAfterDiscount", header: "AMT AFT DIS", size: "1.6fr" },
-    { id: "paymentStatus", header: "PAYMENT STATUS", size: "1.5fr" },
+    // { id: "paymentStatus", header: "PAYMENT STATUS", size: "1.5fr" },
     { id: "action", header: "ACTION", size: "1.5fr" },
   ];
 
@@ -125,18 +126,10 @@ export default function Sale() {
   const [selectedBill, setSelectedBill] = useState<any | null>(null);
   const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
   const [searchQuery, setSearchQuery] = useState("");
-  const [isAddSaleDialogOpen, setIsAddSaleDialogOpen] = useState(false);
-  const [newSaleData, setNewSaleData] = useState({
-    agentName: "",
-    billId: "",
-    date: new Date().toISOString().split("T")[0],
-    customerName: "",
-    discount: 0,
-    sgst: 8,
-    cgst: 8,
-    totalAmount: 0,
-    paymentStatus: "UNPAID",
-  });
+  const [returnModalOpen, setReturnModalOpen] = useState(false);
+  const [billToReturn, setBillToReturn] = useState<any | null>(null);
+  const [returnReason, setReturnReason] = useState("");
+  const [refundAmount, setRefundAmount] = useState("");
 
   const location = useLocation();
 
@@ -157,14 +150,14 @@ export default function Sale() {
           ...bill,
           billId: bill.billNo || bill.billId,
           date: bill.billDate || bill.date,
-          customerName: bill.customerName || bill.customerId?.name || "N/A",
-          discount: bill.totalDiscount !== undefined ? bill.totalDiscount : bill.discount,
+          customerName: (bill.customerId && `${bill.customerId.firstName || ''} ${bill.customerId.lastName || ''}`.trim()) || bill.customerName || "N/A",
+          discount: bill.items && bill.items.length > 0 ? bill.items[0].discountPercent : (bill.totalDiscount !== undefined ? bill.totalDiscount : 0),
           sgst: bill.totalSGST !== undefined ? bill.totalSGST : bill.sgst,
           cgst: bill.totalCGST !== undefined ? bill.totalCGST : bill.cgst,
           totalAmount: bill.netAmount !== undefined ? bill.netAmount : bill.totalAmount,
           amountAfterDiscount: bill.taxableAmount !== undefined ? bill.taxableAmount : bill.amountAfterDiscount,
-          paymentStatus: bill.status || bill.paymentStatus || "UNPAID",
-          agentName: bill.agentName || "N/A"
+          paymentStatus: bill.paymentStatus || bill.status || "UNPAID",
+          agentName: (bill.agentId && `${bill.agentId.firstName || ''} ${bill.agentId.lastName || ''}`.trim()) || bill.agentName || "N/A"
         }));
         const sortedBills = formattedBills.sort((a: any, b: any) => new Date(b.date || b.billDate).getTime() - new Date(a.date || a.billDate).getTime());
         setAllBills(sortedBills);
@@ -245,7 +238,7 @@ export default function Sale() {
       return;
     }
     try {
-      await updatePaymentStatus(billId, newStatus);
+      await updateBillPaymentStatus(billId, newStatus);
       toast.success(`Payment status updated to ${newStatus}`);
       setBills((prevBills) =>
         prevBills.map((bill) =>
@@ -258,53 +251,30 @@ export default function Sale() {
     }
   };
 
-  const handleAddSaleSubmit = async () => {
-    if (!newSaleData.billId || !newSaleData.customerName || !newSaleData.agentName || newSaleData.totalAmount <= 0) {
-      toast.error("Please fill all required fields like Bill ID, Customer, Agent, and Total Amount.");
-      return;
-    }
+  const handleReturnClick = (bill: any) => {
+    setBillToReturn(bill);
+    setRefundAmount(bill.totalAmount || "");
+    setReturnReason("");
+    setReturnModalOpen(true);
+  };
+
+  const handleSubmitReturn = async () => {
+    if (!billToReturn) return;
     try {
-      const response = await addBill(newSaleData);
-      if (response && response.success) {
-        toast.success("Bill created successfully!");
-        setIsAddSaleDialogOpen(false);
-        const newBillList = [response.bill, ...allBills];
-        setAllBills(newBillList);
-        setNewSaleData({ // Reset form
-          agentName: "",
-          billId: "",
-          date: new Date().toISOString().split("T")[0],
-          customerName: "",
-          discount: 0,
-          sgst: 8,
-          cgst: 8,
-          totalAmount: 0,
-          paymentStatus: "UNPAID",
-        });
-      }
+      await addSaleReturn({
+        billId: billToReturn._id,
+        reason: returnReason,
+        refundAmount,
+        items: billToReturn.items || [],
+      });
+      toast.success("Return processed successfully");
+      setReturnModalOpen(false);
+      setBillToReturn(null);
     } catch (error) {
-      console.error("Failed to add new sale:", error);
-      toast.error("Failed to add new sale. Please try again.");
+      console.error("Failed to process return:", error);
+      toast.error("Failed to process return.");
     }
   };
-
-  const handleNewSaleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { id, value, type } = e.target;
-    if (type === 'number') {
-      // Allow empty string for number inputs to clear them
-      setNewSaleData(prev => ({ ...prev, [id]: value }));
-    } else {
-      setNewSaleData(prev => ({ ...prev, [id]: value }));
-    }
-  };
-
-  const handleNumberInputBlur = (e: React.FocusEvent<HTMLInputElement>) => {
-    const { id, value } = e.target;
-    if (value === '') {
-      // If input is empty on blur, set its value to 0
-      setNewSaleData(prev => ({ ...prev, [id]: 0 }));
-    }
-  }
 
   const BillDetailItem = ({
     label,
@@ -341,73 +311,6 @@ export default function Sale() {
   return (
     <AdminLayout title="Bill Generation > Sale">
       <Toaster position="top-center" />
-
-      {/* Add New Sale Modal */}
-      <Dialog open={isAddSaleDialogOpen} onOpenChange={setIsAddSaleDialogOpen}>
-        <DialogContent className="sm:max-w-2xl p-0">
-          <DialogHeader className="bg-gradient-to-br from-[#f97a63] to-[#f75943] text-white p-4 rounded-t-lg">
-            <DialogTitle className="text-xl font-bold tracking-tight">Add New Sale</DialogTitle>
-            <DialogDescription className="text-white/90 text-sm">
-              Enter the details below to create a new sale entry.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="p-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3">
-              <div>
-                <Label htmlFor="agentName" className="text-sm font-medium">Agent Name</Label>
-                <Input id="agentName" value={newSaleData.agentName} onChange={handleNewSaleInputChange} className="mt-1" onFocus={(e) => e.target.select()} />
-              </div>
-              <div>
-                <Label htmlFor="customerName" className="text-sm font-medium">Customer Name</Label>
-                <Input id="customerName" value={newSaleData.customerName} onChange={handleNewSaleInputChange} className="mt-1" onFocus={(e) => e.target.select()} />
-              </div>
-              <div>
-                <Label htmlFor="billId" className="text-sm font-medium">Bill ID</Label>
-                <Input id="billId" value={newSaleData.billId} onChange={handleNewSaleInputChange} className="mt-1" onFocus={(e) => e.target.select()} />
-              </div>
-              <div>
-                <Label htmlFor="date" className="text-sm font-medium">Date</Label>
-                <Input id="date" type="date" value={newSaleData.date} onChange={handleNewSaleInputChange} className="mt-1" onFocus={(e) => e.target.select()} />
-              </div>
-              <div>
-                <Label htmlFor="totalAmount" className="text-sm font-medium">Total Amount (₹)</Label>
-                <Input id="totalAmount" type="number" value={newSaleData.totalAmount} onChange={handleNewSaleInputChange} onBlur={handleNumberInputBlur} className="mt-1" onFocus={(e) => e.target.select()} />
-              </div>
-              <div>
-                <Label htmlFor="discount" className="text-sm font-medium">Discount (₹)</Label>
-                <Input id="discount" type="number" value={newSaleData.discount} onChange={handleNewSaleInputChange} onBlur={handleNumberInputBlur} className="mt-1" onFocus={(e) => e.target.select()} />
-              </div>
-              <div>
-                <Label htmlFor="sgst" className="text-sm font-medium">SGST (%)</Label>
-                <Input id="sgst" type="number" value={newSaleData.sgst} onChange={handleNewSaleInputChange} onBlur={handleNumberInputBlur} className="mt-1" onFocus={(e) => e.target.select()} />
-              </div>
-              <div>
-                <Label htmlFor="cgst" className="text-sm font-medium">CGST (%)</Label>
-                <Input id="cgst" type="number" value={newSaleData.cgst} onChange={handleNewSaleInputChange} onBlur={handleNumberInputBlur} className="mt-1" onFocus={(e) => e.target.select()} />
-              </div>
-              <div className="md:col-span-2">
-                <Label htmlFor="paymentStatus" className="text-sm font-medium">Payment Status</Label>
-                <Select
-                  value={newSaleData.paymentStatus}
-                  onValueChange={(value) => setNewSaleData(prev => ({ ...prev, paymentStatus: value }))}
-                >
-                  <SelectTrigger className="w-full mt-1">
-                    <span>{newSaleData.paymentStatus}</span>
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="UNPAID">UNPAID</SelectItem>
-                    <SelectItem value="PAID">PAID</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          </div>
-          <DialogFooter className="bg-gray-50 p-4 rounded-b-lg">
-            <Button variant="outline" onClick={() => setIsAddSaleDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleAddSaleSubmit} className="bg-[#e98c81] hover:bg-[#d37b70] text-white">Add Sale</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Bill Details Modal */}
       <Dialog open={!!selectedBill} onOpenChange={() => setSelectedBill(null)}>
@@ -535,6 +438,65 @@ export default function Sale() {
         </DialogContent>
       </Dialog>
 
+      {/* Add Return Modal */}
+      <Dialog open={returnModalOpen} onOpenChange={setReturnModalOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Create Return</DialogTitle>
+            <DialogDescription>
+              Process a return for Bill #{billToReturn?.billId}
+            </DialogDescription>
+          </DialogHeader>
+
+          {billToReturn && (
+            <div className="grid gap-4 py-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label className="text-xs text-gray-500">Customer</Label>
+                  <p className="font-medium">{billToReturn.customerName}</p>
+                </div>
+                <div>
+                  <Label className="text-xs text-gray-500">Bill Date</Label>
+                  <p className="font-medium">{formatDate(billToReturn.date)}</p>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="return-reason">Reason for Return</Label>
+                <Input
+                  id="return-reason"
+                  placeholder="e.g. Damaged product, Wrong item"
+                  value={returnReason}
+                  onChange={(e) => setReturnReason(e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="refund-amount">Refund Amount</Label>
+                <div className="relative">
+                  <span className="absolute left-3 top-2.5 text-gray-500">₹</span>
+                  <Input
+                    id="refund-amount"
+                    type="number"
+                    className="pl-7"
+                    value={refundAmount}
+                    onChange={(e) => setRefundAmount(e.target.value)}
+                  />
+                </div>
+                <p className="text-xs text-gray-500">Max refundable: ₹{billToReturn.totalAmount}</p>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setReturnModalOpen(false)}>Cancel</Button>
+            <Button onClick={handleSubmitReturn} className="bg-[#E98C81] hover:bg-[#d37b70] text-white">
+              Confirm Return
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Search Bar */}
       <div className="flex items-center justify-between mb-6">
         <div className="relative flex items-center">
@@ -600,13 +562,6 @@ export default function Sale() {
               </Button>
             )}
           </TooltipProvider>
-          <Button
-            onClick={() => setIsAddSaleDialogOpen(true)}
-            className="rounded-full bg-[#e98c81] text-white hover:bg-[#d37b70] shadow-md flex items-center gap-2"
-          >
-            <Plus className="h-4 w-4" />
-            Add New Sale
-          </Button>
         </div>
       </div>
 
@@ -652,7 +607,7 @@ export default function Sale() {
                       key={column.id}
                       className="px-5 py-3 text-center whitespace-nowrap"
                     >
-                      {column.id === "paymentStatus" ? (
+                      {/* {column.id === "paymentStatus" ? (
                         <span
                           onClick={() =>
                             handleUpdateStatus(bill._id, bill.paymentStatus)
@@ -665,27 +620,68 @@ export default function Sale() {
                         >
                           {bill.paymentStatus}
                         </span>
-                      ) : column.id === "action" ? (
-                        <div className="flex items-center justify-center gap-5">
-                          <button
-                            onClick={() => setSelectedBill(bill)}
-                            className="text-[#2d6bff] hover:underline font-medium text-sm"
-                          >
-                            VIEW
-                          </button>
-                          <button className="text-[#f97a63] hover:underline font-medium text-sm">
-                            RETURN
-                          </button>
-                          <Trash2
-                            className="cursor-pointer text-gray-700 hover:text-red-600"
-                            size={18}
-                            onClick={() => handleDeleteBill(bill._id)}
-                          />
+                      ) : */ column.id === "action" ? (
+                        <div className="flex items-center justify-center gap-2">
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="w-8 h-8 rounded-full border border-gray-300 hover:bg-blue-50"
+                                  onClick={() => setSelectedBill(bill)}
+                                >
+                                  <Eye className="h-4 w-4 text-blue-600" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>View Bill</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="w-8 h-8 rounded-full border border-gray-300 hover:bg-orange-50"
+                                  onClick={() => handleReturnClick(bill)}
+                                >
+                                  <RotateCcw className="h-4 w-4 text-orange-600" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>Return</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="w-8 h-8 rounded-full border border-gray-300 hover:bg-red-50"
+                                  onClick={() => handleDeleteBill(bill._id)}
+                                >
+                                  <Trash2 className="h-4 w-4 text-red-600" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>Delete</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
                         </div>
                       ) : column.id === 'date' ? (
                         formatDate(bill.date) 
+                      ) : column.id === 'discount' ? (
+                        `${bill.discount || 0}%`
                       ) : (
-                        bill[column.id as keyof typeof bill]
+                        bill[column.id as keyof typeof bill] ?? "N/A"
                       )}
                     </td>
                   ))}

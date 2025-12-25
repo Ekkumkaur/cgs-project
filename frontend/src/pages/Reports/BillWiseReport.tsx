@@ -32,7 +32,7 @@ const transformSaleData = (salesData: any[]) => {
     sno: `${index + 1}.`,
     billDate: new Date(bill.billDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' }).replace(/ /g, '-').toUpperCase(),
     billNumber: bill.billNo,
-    partyName: bill.customerName || bill.customerId?.name || "N/A",
+    partyName: (bill.customerId && `${bill.customerId.firstName || ''} ${bill.customerId.lastName || ''}`.trim()) || bill.customerName || "N/A",
     billAmt: bill.netAmount,
     totalQty: bill.totalQty,
     gstSale: bill.taxableAmount,

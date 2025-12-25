@@ -5,6 +5,7 @@ import { useNavigate } from "react-router-dom";
 
 export default function Purchases() {
   const navigate = useNavigate();
+
   const cards = [
     {
       title: "Purchasers Detail",
@@ -31,7 +32,7 @@ export default function Purchases() {
   return (
     <AdminLayout title="Purchases">
       <div className="p-8">
-        <div className="flex justify-center mt-10">
+        <div className="flex justify-center items-center min-h-[50vh]">
           <div className="flex flex-wrap justify-center gap-8">
             {cards.map((card, index) => (
               <div

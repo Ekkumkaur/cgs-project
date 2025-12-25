@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { AdminLayout } from "@/components/AdminLayout";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Search, MoreVertical, Image as ImageIcon, X, Plus } from "lucide-react";
+import { Search, MoreVertical, Image as ImageIcon, X, Plus, Settings } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -27,7 +27,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useNavigate } from "react-router-dom";
-import { getAllProducts, updateProduct, deleteProduct } from "@/adminApi/productApi";
+import { getAllProducts, updateProduct, deleteProduct, getLowStockProducts, updateLowStockSettings, updateProductStock } from "@/adminApi/productApi";
 import { getAllCategories } from "@/adminApi/categoryApi";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -35,6 +35,7 @@ import { Badge } from "@/components/ui/badge";
 export default function InventoryTracking() {
   const navigate = useNavigate();
   const [products, setProducts] = useState([]);
+  const [lowStockProducts, setLowStockProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [formLoading, setFormLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -47,6 +48,11 @@ export default function InventoryTracking() {
   const [editingProduct, setEditingProduct] = useState(null);
   const [viewingProduct, setViewingProduct] = useState(null);
   const [showForm, setShowForm] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [showStockUpdate, setShowStockUpdate] = useState(false);
+  const [stockUpdateProduct, setStockUpdateProduct] = useState<any>(null);
+  const [newStockValue, setNewStockValue] = useState("");
+  const [lowStockThreshold, setLowStockThreshold] = useState(10);
   const [categories, setCategories] = useState([]);
   const [imagePreview, setImagePreview] = useState(null);
   const [imageFile, setImageFile] = useState(null);
@@ -64,6 +70,7 @@ export default function InventoryTracking() {
     } else {
       fetchProducts();
       fetchCategories();
+      fetchLowStock();
     }
   }, [navigate]);
 
@@ -88,6 +95,23 @@ export default function InventoryTracking() {
       setCategories(Array.isArray(categoryData) ? categoryData : []);
     } catch (err) {
       console.error("Failed to fetch categories:", err);
+    }
+  };
+
+  const fetchLowStock = async () => {
+    try {
+      const res = await getLowStockProducts();
+      if (res?.data?.status && res?.data?.data) {
+        const { products, settings } = res.data.data;
+        setLowStockProducts(Array.isArray(products) ? products : []);
+        if (settings) {
+          setLowStockThreshold(settings.threshold ?? 10);
+          setEmailAlert(settings.emailAlert ?? true);
+          setPushAlert(settings.pushAlert ?? false);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to fetch low stock products:", err);
     }
   };
 
@@ -237,6 +261,56 @@ export default function InventoryTracking() {
       toast.error(err.response?.data?.message || "Failed to save product.");
     } finally {
       setFormLoading(false);
+    }
+  };
+
+  const handleUpdateSettings = async () => {
+    try {
+      await updateLowStockSettings({ data: { 
+        threshold: lowStockThreshold,
+        emailAlert,
+        pushAlert
+      }});
+      toast.success("Low stock settings updated successfully!");
+      setShowSettings(false);
+      fetchLowStock();
+    } catch (err) {
+      console.error("Failed to update settings:", err);
+      toast.error("Failed to update settings.");
+    }
+  };
+
+  const handleAlertChange = async (type: 'email' | 'push', value: boolean) => {
+    if (type === 'email') setEmailAlert(value);
+    if (type === 'push') setPushAlert(value);
+
+    try {
+      await updateLowStockSettings({
+        data: {
+          threshold: lowStockThreshold,
+          emailAlert: type === 'email' ? value : emailAlert,
+          pushAlert: type === 'push' ? value : pushAlert
+        }
+      });
+      toast.success(`${type === 'email' ? 'Email' : 'Push'} alerts ${value ? 'enabled' : 'disabled'}`);
+    } catch (err) {
+      console.error("Failed to update alert settings:", err);
+      toast.error("Failed to update settings.");
+    }
+  };
+
+  const handleStockUpdateSubmit = async () => {
+    if (!stockUpdateProduct || newStockValue === "") return;
+    try {
+      await updateProductStock({ id: stockUpdateProduct._id, stock: Number(newStockValue) });
+      toast.success("Stock updated successfully!");
+      setShowStockUpdate(false);
+      setStockUpdateProduct(null);
+      fetchLowStock();
+      fetchProducts();
+    } catch (err) {
+      console.error("Failed to update stock:", err);
+      toast.error("Failed to update stock.");
     }
   };
 
@@ -439,32 +513,56 @@ export default function InventoryTracking() {
 
         {/* ⚙️ Right Panel */}
         <div className="xl:w-[320px] w-full bg-white rounded-xl shadow-sm border border-gray-100 p-4 md:p-5 h-fit xl:sticky xl:top-24 self-start">
-          <h3 className="text-base md:text-lg font-semibold text-gray-800 mb-3">
-            Low Stock Alert
-          </h3>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-base md:text-lg font-semibold text-gray-800">
+              Low Stock Alert
+            </h3>
+            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setShowSettings(true)}>
+              <Settings className="h-4 w-4 text-gray-500" />
+            </Button>
+          </div>
 
-          <div className="bg-red-50 p-3 rounded-md border border-red-200">
-            <p className="text-xs sm:text-sm text-red-700 font-medium">
-              Product C Low Stock – <span className="font-semibold">5 Units remaining</span>
-            </p>
+          <div className="space-y-3 max-h-[300px] overflow-y-auto mb-4">
+            {lowStockProducts.length > 0 ? (
+              lowStockProducts.map((product: any) => (
+                <div key={product._id} className="bg-red-50 p-3 rounded-md border border-red-200">
+                  <p className="text-xs sm:text-sm text-red-700 font-medium">
+                    {product.productName} – <span className="font-semibold">{product.stock} Units remaining</span>
+                  </p>
+                </div>
+              ))
+            ) : (
+              <p className="text-sm text-gray-500">No low stock alerts.</p>
+            )}
           </div>
 
           <div className="pt-4 border-t border-gray-200 mt-3 space-y-4">
-            <select className="w-full border border-gray-300 rounded-md px-3 py-2 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-[#007E66]">
+            <select 
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-[#007E66]"
+              onChange={(e) => {
+                const product = lowStockProducts.find((p: any) => p._id === e.target.value);
+                if (product) {
+                  setStockUpdateProduct(product);
+                  setNewStockValue(product.stock);
+                  setShowStockUpdate(true);
+                }
+                e.target.value = "Update Stock"; // Reset selection
+              }}
+            >
               <option>Update Stock</option>
-              <option>Product A</option>
-              <option>Product B</option>
-              <option>Product C</option>
+              {lowStockProducts.map((p: any) => (
+                <option key={p._id} value={p._id}>{p.productName}</option>
+              ))}
             </select>
 
             {/* 🔔 Notification Toggles */}
             <div className="space-y-2">
               <div className="flex items-center justify-start gap-2">
-                <Switch checked={emailAlert} onCheckedChange={setEmailAlert} />
+                <Switch checked={emailAlert} onCheckedChange={(val) => handleAlertChange('email', val)} />
                 <span className="text-sm text-gray-700">Email</span>
               </div>
               <div className="flex items-center justify-start gap-2">
-                <Switch checked={pushAlert} onCheckedChange={setPushAlert} />
+                <Switch checked={pushAlert} onCheckedChange={(val) => handleAlertChange('push', val)} />
                 <span className="text-sm text-gray-700">Push</span>
               </div>
             </div>
@@ -508,6 +606,61 @@ export default function InventoryTracking() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setViewingProduct(null)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Settings Dialog */}
+      <Dialog open={showSettings} onOpenChange={setShowSettings}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Low Stock Settings</DialogTitle>
+            <DialogDescription>
+              Set the minimum stock level to trigger low stock alerts.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-4 items-center gap-4">
+              <label htmlFor="threshold" className="text-right text-sm font-medium col-span-2">
+                Minimum Stock Level
+              </label>
+              <Input
+                id="threshold"
+                type="number"
+                value={lowStockThreshold}
+                onChange={(e) => setLowStockThreshold(Number(e.target.value))}
+                className="col-span-2"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowSettings(false)}>Cancel</Button>
+            <Button onClick={handleUpdateSettings}>Save Changes</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Stock Update Dialog */}
+      <Dialog open={showStockUpdate} onOpenChange={setShowStockUpdate}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle>Update Stock</DialogTitle>
+            <DialogDescription>
+              Update inventory count for <span className="font-semibold text-gray-900">{stockUpdateProduct?.productName}</span>
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <label className="block text-sm font-medium mb-2">New Stock Quantity</label>
+            <Input
+              type="number"
+              value={newStockValue}
+              onChange={(e) => setNewStockValue(e.target.value)}
+              placeholder="Enter new stock quantity"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowStockUpdate(false)}>Cancel</Button>
+            <Button onClick={handleStockUpdateSubmit} className="bg-[#119D82] hover:bg-[#0e866f]">Update Stock</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

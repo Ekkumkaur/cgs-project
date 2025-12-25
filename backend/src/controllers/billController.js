@@ -13,6 +13,7 @@ export const addBill = async (req, res) => {
       paidAmount,
       roundOff,
       notes,
+      paymentStatus: providedStatus,
     } = req.body;
 
     const customerId = req.body.customerId || req.params.customerId;
@@ -123,12 +124,16 @@ export const addBill = async (req, res) => {
 
     const balanceAmount = netAmount - (paidAmount || 0);
 
-    const status =
-      balanceAmount === 0
-        ? "Paid"
-        : paidAmount > 0
-        ? "Partial"
-        : "Unpaid";
+    // Use provided status if it is "Draft", otherwise calculate based on payment
+    let paymentStatus = providedStatus === "Draft" ? "Draft" : null;
+
+    if (!paymentStatus) {
+      paymentStatus = balanceAmount === 0
+          ? "Paid"
+          : paidAmount > 0
+          ? "Partial"
+          : "Unpaid";
+    }
 
     const bill = await Bill.create({
       customerId,
@@ -149,7 +154,7 @@ export const addBill = async (req, res) => {
       paymentMode,
       paidAmount,
       balanceAmount,
-      status,
+      paymentStatus,
 
       notes,
     });
@@ -167,6 +172,18 @@ export const addBill = async (req, res) => {
   }
 };
 
+/* ================= GET DRAFT BILLS ================= */
+export const getDraftBills = async (req, res) => {
+  try {
+    const bills = await Bill.find({ paymentStatus: "Draft" })
+      .populate("customerId", "firstName lastName phoneNumber")
+      .sort({ createdAt: -1 });
+
+    res.status(200).json({ success: true, bills });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
 
 /* ================= GET ALL BILLS ================= */
 export const getBills = async (req, res) => {
@@ -260,6 +277,7 @@ export const updateBill = async (req, res) => {
       paidAmount,
       roundOff,
       notes,
+      paymentStatus: providedStatus,
     } = req.body;
 
     const bill = await Bill.findById(id);
@@ -291,12 +309,16 @@ export const updateBill = async (req, res) => {
 
     const balanceAmount = netAmount - (paidAmount || 0);
 
-    const status =
-      balanceAmount === 0
-        ? "Paid"
-        : paidAmount > 0
-        ? "Partial"
-        : "Unpaid";
+    // Use provided status if it is "Draft", otherwise calculate based on payment
+    let paymentStatus = providedStatus === "Draft" ? "Draft" : null;
+
+    if (!paymentStatus) {
+      paymentStatus = balanceAmount === 0
+          ? "Paid"
+          : paidAmount > 0
+          ? "Partial"
+          : "Unpaid";
+    }
 
     /* ---------- UPDATE ---------- */
     bill.customerId = customerId;
@@ -318,7 +340,7 @@ export const updateBill = async (req, res) => {
     bill.paymentMode = paymentMode;
     bill.paidAmount = paidAmount;
     bill.balanceAmount = balanceAmount;
-    bill.status = status;
+    bill.paymentStatus = paymentStatus;
 
     bill.notes = notes;
 
@@ -348,67 +370,21 @@ export const deleteBill = async (req, res) => {
   }
 };
 
-/* ========== GENERATE BILL BY CUSTOMER ID (WITH NAME) ========== */
-export const generateBillByCustomer = async (req, res) => {
+export const updateBillPaymentStatus = async (req, res) => {
   try {
-    const { customerId } = req.params;
+    const { id } = req.params;
+    const { paymentStatus } = req.body;
 
-    if (!customerId || !mongoose.Types.ObjectId.isValid(customerId)) {
-      return res.status(400).json({ message: "Invalid customer ID" });
-    }
-
-    const bill = await Bill.findOne({ customerId })
-      .sort({ createdAt: -1 }) // latest bill
-      .populate(
-        "customerId",
-        "firstName lastName phoneNumber email gstNumber address"
-      )
-      .populate("agentId", "firstName lastName")
-      .populate("items.productId", "productName itemCode brandName hsnCode");
+    const bill = await Bill.findByIdAndUpdate(
+      id.trim(),
+      { paymentStatus },
+      { new: true, runValidators: true }
+    );
 
     if (!bill) {
-      return res.status(404).json({
-        message: "No bill found for this customer",
-      });
+      return res.status(404).json({ message: "Bill not found" });
     }
-
-    /* 🔹 customer name handling */
-    const customer = bill.customerId;
-
-    const customerDetails = {
-      firstName: customer?.firstName || "",
-      lastName: customer?.lastName || "",
-      fullName: `${customer?.firstName || ""} ${customer?.lastName || ""}`.trim(),
-      phoneNumber: customer?.phoneNumber || "",
-      email: customer?.email || "",
-      gstNumber: customer?.gstNumber || "",
-      address: customer?.address || "",
-    };
-
-    res.status(200).json({
-      success: true,
-      generatedFrom: "customerId",
-      billId: bill._id,
-      billNo: bill.billNo,
-      billDate: bill.billDate,
-      customer: customerDetails,
-      items: bill.items,
-      totals: {
-        totalQty: bill.totalQty,
-        grossAmount: bill.grossAmount,
-        totalDiscount: bill.totalDiscount,
-        taxableAmount: bill.taxableAmount,
-        totalCGST: bill.totalCGST,
-        totalSGST: bill.totalSGST,
-        totalIGST: bill.totalIGST,
-        roundOff: bill.roundOff,
-        netAmount: bill.netAmount,
-        paidAmount: bill.paidAmount,
-        balanceAmount: bill.balanceAmount,
-        status: bill.status,
-      },
-      notes: bill.notes,
-    });
+    res.json({ success: true, message: "Bill payment status updated successfully", bill });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

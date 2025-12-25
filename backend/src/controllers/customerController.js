@@ -17,6 +17,7 @@ export const getAllCustomers = async (req, res) => {
         { lastName: searchRegex },
         { email: searchRegex },
         { phoneNumber: searchRegex },
+        { customerCode: searchRegex },
       ];
     }
 
@@ -28,6 +29,15 @@ export const getAllCustomers = async (req, res) => {
         .select("-password -otp -otpExpiresAt"),
       User.countDocuments(query),
     ]);
+
+    // Ensure customerCode exists for all fetched customers (Lazy Migration)
+    await Promise.all(
+      customers.map(async (customer) => {
+        if (!customer.customerCode) {
+          await customer.save();
+        }
+      })
+    );
 
     const pagination = {
       page,

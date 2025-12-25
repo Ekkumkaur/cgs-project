@@ -101,7 +101,7 @@ export default function Customers() {
         const reversedCustomers = response.data.data.customers.reverse();
         const formattedCustomers = reversedCustomers.map((customer, index) => ({
           id: customer._id,
-          sno: `CGS${String(index + 1).padStart(3, "0")}`,
+          sno: `CUST${String(index + 1).padStart(3, "0")}`,
           name:
             customer.firstName || customer.lastName
               ? `${customer.firstName} ${customer.lastName}`.trim()
@@ -139,7 +139,7 @@ export default function Customers() {
         const reversedCustomers = [...customersData].reverse();
         const formattedCustomers = reversedCustomers.map((customer, index) => ({
           id: customer._id,
-          sno: `CGS${String(index + 1).padStart(3, "0")}`,
+          sno: `CUST${String(index + 1).padStart(3, "0")}`,
           name:
             customer.firstName || customer.lastName
               ? `${customer.firstName} ${customer.lastName}`.trim()
@@ -182,7 +182,7 @@ export default function Customers() {
         const reversedCustomers = [...customersData].reverse();
         const formattedCustomers = reversedCustomers.map((customer, index) => ({
           id: customer._id,
-          sno: `CGS${String(index + 1).padStart(3, "0")}`,
+          sno: `CUST${String(index + 1).padStart(3, "0")}`,
           name:
             customer.firstName || customer.lastName
               ? `${customer.firstName} ${customer.lastName}`.trim()
@@ -450,7 +450,7 @@ export default function Customers() {
                 className="rounded-full bg-[#E98C81] hover:bg-[#d97a71] text-white px-5 w-full sm:w-auto"
                 onClick={() => {
                   const nextCustomerNumber = customers.length + 1;
-                  setNewCustomer(prev => ({ ...prev, customerCode: `CGS${String(nextCustomerNumber).padStart(3, '0')}` }));
+                  setNewCustomer(prev => ({ ...prev, customerCode: `CUST${String(nextCustomerNumber).padStart(3, '0')}` }));
                 }}
               >
                 + Add Customer
@@ -615,7 +615,7 @@ export default function Customers() {
                                   size="icon"
                                   variant="ghost"
                                   className="w-8 h-8 rounded-full border border-gray-300 hover:bg-gray-100"
-                                  onClick={() => navigate(`/bills/new-bill?customerId=${customer.id}`)}
+                                  onClick={() => navigate(`/bills/new-bill?customerId=${customer.id}`, { state: { customerName: customer.name, customerCode: customer.sno } })}
                                 >
                                   <Eye className="w-4 h-4 text-gray-600" />
                                 </Button>

@@ -18,8 +18,8 @@ const ledgerSchema = new mongoose.Schema({
     enum: ["customer", "supplier"],
   },
 
-  partyId: {
-    type: String, // e.g. CUST-001 or SUPP-001
+  partyCode: {
+    type: String,
     required: true,
     trim: true,
   },

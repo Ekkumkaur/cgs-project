@@ -1,4 +1,5 @@
 import Product from "../models/product.js";
+import StockAlert from "../models/stock.js";
 import responseHandler from "../utils/responseHandler.js";
 import mongoose from "mongoose";
 
@@ -26,6 +27,70 @@ export const getProductById = async (req, res) => {
     if (!product)
       return res.status(404).json(responseHandler.error("Product not found"));
     return res.json(responseHandler.success(product, "Product retrieved successfully"));
+  } catch (err) {
+    return res.status(500).json(responseHandler.error(err.message));
+  }
+};
+
+// ⚠️ Get Low Stock Products & Settings
+export const getLowStockProducts = async (req, res) => {
+  try {
+    // Get settings or create default
+    let settings = await StockAlert.findOne();
+    if (!settings) {
+      settings = await StockAlert.create({});
+    }
+
+    const threshold = settings.threshold;
+
+    const products = await Product.find({ stock: { $lte: threshold } })
+      .select("productName stock brandName itemCode image")
+      .sort({ stock: 1 })
+      .limit(20);
+
+    return res.json(
+      responseHandler.success({
+        products,
+        settings
+      }, "Low stock products retrieved successfully")
+    );
+  } catch (err) {
+    return res.status(500).json(responseHandler.error(err.message));
+  }
+};
+
+// ⚙️ Update Stock Alert Settings
+export const updateStockAlertSettings = async (req, res) => {
+  try {
+    const { threshold, emailAlert, pushAlert } = req.body;
+    
+    let settings = await StockAlert.findOne();
+    if (!settings) {
+      settings = new StockAlert();
+    }
+
+    if (threshold !== undefined) settings.threshold = threshold;
+    if (emailAlert !== undefined) settings.emailAlert = emailAlert;
+    if (pushAlert !== undefined) settings.pushAlert = pushAlert;
+
+    await settings.save();
+
+    return res.json(
+      responseHandler.success(settings, "Stock alert settings updated successfully")
+    );
+  } catch (err) {
+    return res.status(500).json(responseHandler.error(err.message));
+  }
+};
+
+// ⚡ Quick Stock Update
+export const updateStock = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { stock } = req.body;
+    const product = await Product.findByIdAndUpdate(id, { stock: Number(stock) }, { new: true });
+    if (!product) return res.status(404).json(responseHandler.error("Product not found"));
+    return res.json(responseHandler.success(product, "Stock updated successfully"));
   } catch (err) {
     return res.status(500).json(responseHandler.error(err.message));
   }

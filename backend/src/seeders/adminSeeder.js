@@ -12,24 +12,39 @@ const seedAdmin = async () => {
     const adminPassword = process.env.ADMIN_PASSWORD || "Admin@123";
     const adminPhone = process.env.ADMIN_PHONE || "9876543210";
 
-    const existingAdmin = await Admin.findOne({ email: adminEmail });
-    if (existingAdmin) {
-      console.log("Admin already exists");
-      return;
+    let admin = await Admin.findOne({ email: adminEmail });
+
+    if (!admin) {
+      console.log("Creating new admin...");
+      admin = new Admin({
+        firstName: "Super",
+        lastName: "Admin",
+        email: adminEmail,
+        phoneNumber: adminPhone,
+        password: adminPassword,
+        role: "admin",
+      });
+    } else {
+      console.log("Admin found. Updating OTP...");
     }
 
-    const admin = await Admin.create({
-      firstName: "Super",
-      lastName: "Admin",
-      email: adminEmail,
-      phoneNumber: adminPhone,
-      password: adminPassword,
-      role: "admin",
-    });
+    // Generate OTP
+    const otp = parseInt(process.env.OTP) || 1234;
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
 
-    console.log("✅ Admin seeded successfully");
-    console.log("Email:", admin.email);
-    console.log("Password:", adminPassword);
+    admin.otp = otp;
+    admin.otpExpiresAt = expiresAt;
+
+    await admin.save();
+
+    console.log("------------------------------------------------");
+    console.log("✅ Admin Seeded/Updated Successfully");
+    console.log("------------------------------------------------");
+    console.log(`👤 Name: ${admin.firstName} ${admin.lastName}`);
+    console.log(`📧 Email: ${admin.email}`);
+    console.log(`📱 Phone: ${admin.phoneNumber}`);
+    console.log(`🔑 OTP:  ${admin.otp}`); // OTP included in response
+    console.log("------------------------------------------------");
   } catch (err) {
     console.error(err);
   } finally {

@@ -4,8 +4,8 @@ import {
   getAllPurchases,
   updatePurchase,
   deletePurchase,
+  getPurchaseById,
   getPurchaseVouchers,
-  getPurchaseVoucherByNo,
 } from "../controllers/purchaseController.js";
 import protect, { adminOnly } from "../middleware/authMiddleware.js";
 
@@ -16,9 +16,10 @@ router.post("/add", protect, adminOnly, addPurchase);
 router.get("/all", protect, adminOnly, getAllPurchases);
 router.put("/update/:id", protect, adminOnly, updatePurchase);
 router.delete("/delete/:id", protect, adminOnly, deletePurchase);
-// purchase voucher list
-router.get("/voucher",protect, adminOnly, getPurchaseVouchers);
-router.get("/voucher/:voucherNo", protect, adminOnly, getPurchaseVoucherByNo);
 
+// Purchase Voucher Routes
+router.get("/vouchers", protect, adminOnly, getPurchaseVouchers); // Fetch data for new voucher
+router.post("/voucher", protect, adminOnly, addPurchase);       // Save new voucher
+router.get("/:id", protect, adminOnly, getPurchaseById);        // ✅ Get Single Purchase (Must be last)
 
 export default router;

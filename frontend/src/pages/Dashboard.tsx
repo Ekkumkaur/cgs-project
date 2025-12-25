@@ -1,4 +1,6 @@
+import React, { useEffect, useState } from "react";
 import { AdminLayout } from "@/components/AdminLayout";
+import { getDashboardData } from "@/adminApi/dashboardApi";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   LineChart,
@@ -13,30 +15,108 @@ import {
   Cell,
 } from "recharts";
 
-const stats = [
-  { label: "Total Sale", value: "Rs. 352", color: "bg-[#FFDCDC]" },
-  { label: "Total Order", value: "120", color: "bg-[#EEDCFF]" },
-  { label: "Active Customer", value: "560", color: "bg-[#C9F5EE]" },
-  { label: "Low Stock", value: "68", color: "bg-[#FFE6B2]" },
-];
-
-const salesData = [
-  { month: "Jan", lipstick: 70, rubberBand: 20, toner: 10, handCream: 15 },
-  { month: "Feb", lipstick: 40, rubberBand: 30, toner: 15, handCream: 25 },
-  { month: "Mar", lipstick: 60, rubberBand: 80, toner: 25, handCream: 40 },
-  { month: "Apr", lipstick: 50, rubberBand: 45, toner: 10, handCream: 70 },
-  { month: "May", lipstick: 90, rubberBand: 75, toner: 35, handCream: 60 },
-];
-
-// product performance graph — Y-axis limited to 50
-const productPerformance = [
-  { name: "Lipstick", value: 15, color: "#8B5CF6" },
-  { name: "Rubber band", value: 30, color: "#3B82F6" },
-  { name: "Toner", value: 10, color: "#F97316" },
-  { name: "Hand cream", value: 20, color: "#22C55E" },
-];
-
 export default function Dashboard() {
+  const [stats, setStats] = useState([
+    { label: "Total Sale", value: "Rs. 0", color: "bg-[#FFDCDC]" },
+    { label: "Total Order", value: "0", color: "bg-[#EEDCFF]" },
+    { label: "Active Customer", value: "0", color: "bg-[#C9F5EE]" },
+    { label: "Low Stock", value: "0", color: "bg-[#FFE6B2]" },
+  ]);
+
+  const [salesData, setSalesData] = useState<any[]>([]);
+
+  // product performance graph — Y-axis limited to 50
+  const [productPerformance, setProductPerformance] = useState<any[]>([]);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const response = await getDashboardData();
+        if (response && response.success && response.data) {
+          const { cards, charts } = response.data;
+
+          // Update Stats
+          setStats([
+            {
+              label: "Total Sale",
+              value: `Rs. ${cards.totalSalesAmount?.toLocaleString() || 0}`,
+              color: "bg-[#FFDCDC]",
+            },
+            {
+              label: "Total Order",
+              value: (cards.totalOrders || 0).toString(),
+              color: "bg-[#EEDCFF]",
+            },
+            {
+              label: "Active Customer",
+              value: (cards.activeCustomers || 0).toString(),
+              color: "bg-[#C9F5EE]",
+            },
+            {
+              label: "Low Stock",
+              value: (cards.lowStockCount || 0).toString(),
+              color: "bg-[#FFE6B2]",
+            },
+          ]);
+
+          // Update Sales Chart (FIXED)
+          if (charts.salesChart) {
+            const monthNames = [
+              "Jan",
+              "Feb",
+              "Mar",
+              "Apr",
+              "May",
+              "Jun",
+              "Jul",
+              "Aug",
+              "Sep",
+              "Oct",
+              "Nov",
+              "Dec",
+            ];
+
+            const fullYearSales = monthNames.map((month, index) => {
+              const found = charts.salesChart.find(
+                (item: any) => item.month === index + 1
+              );
+
+              return {
+                month,
+                total: found ? Number(found.total.toFixed(2)) : 0,
+              };
+            });
+
+            setSalesData(fullYearSales);
+          }
+
+          // Update Product Performance
+          if (charts.productPerformance) {
+            const colors = [
+              "#8B5CF6",
+              "#3B82F6",
+              "#F97316",
+              "#22C55E",
+              "#EAB308",
+              "#EC4899",
+            ];
+            const mappedPerformance = charts.productPerformance.map(
+              (item: any, index: number) => ({
+                name: item.productName,
+                value: item.sold || 0,
+                color: colors[index % colors.length],
+              })
+            );
+            setProductPerformance(mappedPerformance);
+          }
+        }
+      } catch (error) {
+        console.error("Error fetching dashboard data:", error);
+      }
+    };
+    fetchData();
+  }, []);
+
   return (
     <AdminLayout title="Dashboard">
       <div className="space-y-8">
@@ -67,19 +147,21 @@ export default function Dashboard() {
               <CardTitle>Sales</CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-[#119D82] text-lg font-semibold mb-4">
-                +10,566
-              </p>
               <ResponsiveContainer width="100%" height={300}>
                 <LineChart data={salesData}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="month" />
                   <YAxis />
                   <Tooltip />
-                  <Line type="monotone" dataKey="lipstick" stroke="#8B5CF6" strokeWidth={2} />
-                  <Line type="monotone" dataKey="rubberBand" stroke="#3B82F6" strokeWidth={2} />
-                  <Line type="monotone" dataKey="toner" stroke="#F97316" strokeWidth={2} />
-                  <Line type="monotone" dataKey="handCream" stroke="#22C55E" strokeWidth={2} />
+                  <Line
+                    type="monotone"
+                    dataKey="total"
+                    stroke="#8B5CF6"
+                    strokeWidth={3}
+                    dot={{ r: 6 }}
+                    activeDot={{ r: 8 }}
+                    name="Total Sales"
+                  />
                 </LineChart>
               </ResponsiveContainer>
             </CardContent>
@@ -94,9 +176,9 @@ export default function Dashboard() {
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={productPerformance}>
                   <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="name" />
+                  <XAxis dataKey="name" tick={false} axisLine={false} />
                   {/* 👇 Fix Y-axis to show up to 50 only */}
-                  <YAxis domain={[0, 50]} ticks={[0, 25, 50]} />
+                  <YAxis />
                   <Tooltip />
                   <Bar dataKey="value" radius={[10, 10, 0, 0]}>
                     {productPerformance.map((entry, index) => (

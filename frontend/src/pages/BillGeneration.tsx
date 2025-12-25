@@ -59,6 +59,7 @@ export default function BillGeneration() {
     { title: "New Bill", img: "src/images/new-bill.png", path: "/bills/customers" },
     { title: "Sale", img: "src/images/sale.png", path: "/bills/sale" },
     { title: "Sale Return", img: "src/images/sale-return.png", path: "/bills/sale-return" },
+    { title: "Drafts", img: "src/images/drafts.png", path: "/bills/drafts" },
   ];
 
   const [showModal, setShowModal] = useState(false);
@@ -258,7 +259,7 @@ export default function BillGeneration() {
 
   return (
     <AdminLayout title="Bill Generation">
-      <div className="flex flex-wrap justify-center gap-10 mt-10">
+      <div className="flex flex-wrap items-center justify-center content-center gap-10 min-h-[60vh]">
         {cards.map((card, index) => (
           <Card
             key={index}

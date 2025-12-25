@@ -1,6 +1,6 @@
 import Supplier from "../models/supplier.js";
 import Purchase from "../models/purchase.js";
-import PurchaseReturn from "../models/return.js";
+import PurchaseReturn from "../models/purchaseReturn.js";
 import mongoose from "mongoose";
 
 // 📊 SUPPLIER SUMMARY
